@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math/rand"
 	"net/http"
 	"os"
 	"strings"
@@ -195,6 +196,11 @@ startListening:
 				chatHistory[threadID] = chatHistory[threadID][len(chatHistory[threadID])-10:]
 			}
 			historyMu.Unlock()
+			
+			// Giả lập thời gian suy nghĩ và đánh máy ngẫu nhiên từ 2-10 giây
+			delay := 2 + rand.Intn(9) // Tạo số từ 2 đến 10
+			fmt.Printf("... Đang giả lập đánh máy trong %d giây\n", delay)
+			time.Sleep(time.Duration(delay) * time.Second)
 
 			reply := zago.Message{Text: aiResponse}
 			_, _ = client.SendMessage(reply, threadID, threadType)
