@@ -14,8 +14,9 @@ RUN go mod download
 # Copy toàn bộ mã nguồn
 COPY . .
 
-# Build ứng dụng
-RUN CGO_ENABLED=0 go build -o zalo-bot ./bot/
+# Build ứng dụng với chế độ hiển thị chi tiết (-v)
+# CGO_ENABLED=0 giúp tạo binary tĩnh hoàn toàn
+RUN CGO_ENABLED=0 go build -v -o zalo-bot ./bot/
 
 # Bước 2: Tạo môi trường chạy gọn nhẹ
 FROM alpine:latest
@@ -28,7 +29,7 @@ WORKDIR /app
 # Copy file thực thi từ bước build
 COPY --from=builder /app/zalo-bot .
 
-# Render cung cấp cổng qua biến môi trường PORT, mặc định là 8080
+# Render cung cấp cổng qua biến môi trường PORT
 EXPOSE 8080
 
 # Chạy ứng dụng
