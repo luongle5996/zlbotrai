@@ -108,8 +108,8 @@ func main() {
 			log.Fatalf("Lỗi lấy mã QR: %v", err)
 		}
 
-		fmt.Printf("\nBƯỚC 1: Mã QR đã được lưu tại: %s\n", qr.ImagePath)
-		fmt.Printf("BƯỚC 2: Dùng link này để quét: https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=%s\n", qr.Code)
+		fmt.Printf("\nBƯỚC 1: Mã QR đã được tạo thành công.\n")
+		fmt.Printf("BƯỚC 2: Dùng link này để quét: https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=https://id.zalo.me/account/authen/qr/scan?code=%s\n", qr.Code)
 		fmt.Println("BƯỚC 3: Dùng ứng dụng Zalo trên điện thoại quét và nhấn 'Đăng nhập'.")
 
 		scanned, err := client.WaitQRCodeScan(qr, 30, 5*time.Second)
