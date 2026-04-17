@@ -14,8 +14,8 @@ RUN go mod download
 # Copy toàn bộ mã nguồn
 COPY . .
 
-# Build ứng dụng (Build cả main và các file hỗ trợ trong thư mục bot)
-RUN go build -o zalo-bot ./bot/main.go ./bot/ai.go ./bot/search.go ./bot/db.go
+# Build ứng dụng
+RUN CGO_ENABLED=0 go build -o zalo-bot ./bot/
 
 # Bước 2: Tạo môi trường chạy gọn nhẹ
 FROM alpine:latest
