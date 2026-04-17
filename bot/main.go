@@ -197,9 +197,20 @@ startListening:
 			}
 			historyMu.Unlock()
 			
-			// Giả lập thời gian suy nghĩ và đánh máy ngẫu nhiên từ 2-10 giây
-			delay := 2 + rand.Intn(9) // Tạo số từ 2 đến 10
-			fmt.Printf("... Đang giả lập đánh máy trong %d giây\n", delay)
+			// Giả lập thời gian đánh máy dựa trên độ dài tin nhắn
+			// Tốc độ đánh máy trung bình: ~25 ký tự/giây
+			charCount := len(aiResponse)
+			typingSpeed := 15 + rand.Intn(15) // Tốc độ từ 15-30 ký tự mỗi giây
+			
+			delay := charCount / typingSpeed
+			if delay < 2 {
+				delay = 2 // Chờ ít nhất 2 giây
+			}
+			if delay > 12 {
+				delay = 12 // Chờ tối đa 12 giây để không quá lâu
+			}
+			
+			fmt.Printf("... Tin nhắn dài %d ký tự. Đang giả lập đánh máy trong %d giây\n", charCount, delay)
 			time.Sleep(time.Duration(delay) * time.Second)
 
 			reply := zago.Message{Text: aiResponse}
