@@ -55,16 +55,31 @@ func main() {
 	chatHistory := make(map[string][]AIMessage)
 	historyMu := sync.Mutex{}
 
-	// Bắt đầu một Web Server nhỏ để Render không bị "ngủ"
+	// Biến lưu ảnh QR để hiển thị trên trình duyệt
+	var currentQR []byte
+	var qrMu sync.Mutex
+
+	// Bắt đầu một Web Server nhỏ để Render không bị "ngủ" và để xem mã QR
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
 	}
 	go func() {
 		http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-			fmt.Fprintf(w, "Bot Zalo AI is running! (Time: %s)", time.Now().Format(time.RFC822))
+			fmt.Fprintf(w, "Bot Zalo AI is running! (Time: %s)\nTruy cập /qr để lấy mã đăng nhập.", time.Now().Format(time.RFC822))
 		})
-		fmt.Printf("📡 Health-check server started on port %s\n", port)
+		http.HandleFunc("/qr", func(w http.ResponseWriter, r *http.Request) {
+			qrMu.Lock()
+			data := currentQR
+			qrMu.Unlock()
+			if data == nil {
+				fmt.Fprintf(w, "Chưa có mã QR. Vui lòng đợi hoặc tải lại trang.")
+				return
+			}
+			w.Header().Set("Content-Type", "image/png")
+			w.Write(data)
+		})
+		fmt.Printf("📡 Web Server started on port %s. View QR at: /qr\n", port)
 		if err := http.ListenAndServe(":"+port, nil); err != nil {
 			log.Printf("Lỗi Web Server: %v", err)
 		}
@@ -108,8 +123,13 @@ func main() {
 			log.Fatalf("Lỗi lấy mã QR: %v", err)
 		}
 
-		fmt.Printf("\nBƯỚC 1: Mã QR đã được tạo thành công.\n")
-		fmt.Printf("BƯỚC 2: Dùng link này để quét: https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=https://id.zalo.me/account/authen/qr/scan?code=%s\n", qr.Code)
+		// Lưu ảnh QR vào bộ nhớ để hiển thị qua Web
+		qrMu.Lock()
+		currentQR = qr.ImageBytes
+		qrMu.Unlock()
+
+		fmt.Printf("\nBƯỚC 1: Đã lấy mã QR mới.\n")
+		fmt.Printf("BƯỚC 2: Bạn hãy mở link của Render thêm đuôi /qr để quét mã. Ví dụ: https://ten-cua-ban.onrender.com/qr\n")
 		fmt.Println("BƯỚC 3: Dùng ứng dụng Zalo trên điện thoại quét và nhấn 'Đăng nhập'.")
 
 		scanned, err := client.WaitQRCodeScan(qr, 30, 5*time.Second)
