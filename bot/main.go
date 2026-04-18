@@ -35,14 +35,8 @@ func getHonorific(client *zago.ZaloAPI, userID string) string {
 	}
 
 	if user, ok := info.(*worker.User); ok {
-		// In ra TOÀN BỘ dữ liệu User để debug
 		allData := user.ToMap()
-		debugJSON, _ := json.MarshalIndent(allData, "", "  ")
-		fmt.Printf("🔍 [DEBUG] Dữ liệu User %s:\n%s\n", userID, string(debugJSON))
-
-		// Tìm gender ở MỌI NƠI trong dữ liệu (đệ quy)
 		gender := findGender(allData)
-		fmt.Printf("ℹ️ [Giới tính] User %s -> gender = %d\n", userID, gender)
 
 		if gender == 0 {
 			h = "anh"
