@@ -23,7 +23,7 @@ func getHonorific(client *zago.ZaloAPI, userID string) string {
 	genderMu.RLock()
 	h, ok := genderCache[userID]
 	genderMu.RUnlock()
-	if ok {
+	if ok && h != "anh/chị" {
 		return h
 	}
 
@@ -31,23 +31,16 @@ func getHonorific(client *zago.ZaloAPI, userID string) string {
 	info, err := client.FetchUserInfo(userID)
 	if err == nil {
 		if user, ok := info.(*worker.User); ok {
-			// Thử lấy danh sách profiles trực tiếp (do thư viện đã làm phẳng data)
 			profilesObj := user.Get("profiles")
 			if profiles, ok := profilesObj.([]any); ok && len(profiles) > 0 {
 				if p, ok := profiles[0].(map[string]any); ok {
 					if genderVal, ok := p["gender"]; ok {
-						// In log để debug giới tính thực tế từ Zalo
 						fmt.Printf("ℹ️ [Giới tính] User %s có gender code: %v\n", userID, genderVal)
-
-						// Chuyển đổi linh hoạt các kiểu số khác nhau
 						gender := -1
 						switch v := genderVal.(type) {
-						case float64:
-							gender = int(v)
-						case int:
-							gender = v
-						case string:
-							gender, _ = strconv.Atoi(v)
+						case float64: gender = int(v)
+						case int: gender = v
+						case string: gender, _ = strconv.Atoi(v)
 						case json.Number:
 							val, _ := v.Int64()
 							gender = int(val)
@@ -64,9 +57,12 @@ func getHonorific(client *zago.ZaloAPI, userID string) string {
 		}
 	}
 
-	genderMu.Lock()
-	genderCache[userID] = h
-	genderMu.Unlock()
+	// Chỉ lưu vào cache nếu đã xác định được Anh hoặc Chị
+	if h != "anh/chị" {
+		genderMu.Lock()
+		genderCache[userID] = h
+		genderMu.Unlock()
+	}
 	return h
 }
 
@@ -97,14 +93,6 @@ func main() {
 		defer db.Close()
 	}
 
-	// Lấy danh sách Groq Keys từ biến môi trường (phân cách bằng dấu phẩy)
-	groqKeysStr := os.Getenv("GROQ_KEYS")
-	var groqKeys []string
-	if groqKeysStr != "" {
-		groqKeys = strings.Split(groqKeysStr, ",")
-	} else {
-		log.Fatal("LỖI: Thiếu biến môi trường GROQ_KEYS")
-	}
 	searchSvc := NewSearchService(serperKey)
 
 	profile := BotProfile{
@@ -121,7 +109,41 @@ func main() {
 		Vibe:         "Lễ phép (Dạ/Vâng), nhanh gọn, sử dụng icon 🌸, ✨, 🛠️ hợp lý",
 	}
 
-	ai := NewGroqService(groqKeys, "Hãy tập trung hỗ trợ người dùng một cách chuyên nghiệp, lịch sự và khách quan trong mọi lĩnh vực.", profile, searchSvc)
+	// AI Setup: Hỗ trợ cả Groq và Gemini
+	var ai AIService
+	provider := os.Getenv("MODEL_PROVIDER")
+	if provider == "" {
+		provider = "groq" // Mặc định
+	}
+
+	if provider == "gemini" {
+		geminiKeysStr := os.Getenv("GEMINI_KEYS")
+		var geminiKeys []string
+		if geminiKeysStr != "" {
+			geminiKeys = strings.Split(geminiKeysStr, ",")
+		} else {
+			// Fallback sang GEMINI_KEY nếu chỉ có 1 key
+			oldKey := os.Getenv("GEMINI_KEY")
+			if oldKey != "" {
+				geminiKeys = []string{oldKey}
+			} else {
+				log.Fatal("LỖI: Thiếu biến môi trường GEMINI_KEYS")
+			}
+		}
+		fmt.Printf("🚀 Đang sử dụng 'bộ não' Google AI (%d keys)\n", len(geminiKeys))
+		ai = NewGeminiService(geminiKeys, "Hãy tập trung hỗ trợ người dùng một cách chuyên nghiệp, lịch sự và khách quan.", profile, searchSvc)
+	} else {
+		groqKeysStr := os.Getenv("GROQ_KEYS")
+		var groqKeys []string
+		if groqKeysStr != "" {
+			groqKeys = strings.Split(groqKeysStr, ",")
+		} else {
+			log.Fatal("LỖI: Thiếu biến môi trường GROQ_KEYS")
+		}
+		fmt.Println("🚀 Đang sử dụng 'bộ não' Groq (Llama 3.3)")
+		ai = NewGroqService(groqKeys, "Hãy tập trung hỗ trợ người dùng một cách chuyên nghiệp, lịch sự và khách quan.", profile, searchSvc)
+	}
+
 	chatHistory := make(map[string][]AIMessage)
 	historyMu := sync.Mutex{}
 
@@ -280,8 +302,8 @@ startListening:
 			historyMu.Lock()
 			chatHistory[threadID] = append(chatHistory[threadID], AIMessage{Role: "user", Content: message})
 			chatHistory[threadID] = append(chatHistory[threadID], AIMessage{Role: "assistant", Content: aiResponse})
-			if len(chatHistory[threadID]) > 10 {
-				chatHistory[threadID] = chatHistory[threadID][len(chatHistory[threadID])-10:]
+			if len(chatHistory[threadID]) > 30 {
+				chatHistory[threadID] = chatHistory[threadID][len(chatHistory[threadID])-30:]
 			}
 			historyMu.Unlock()
 			
