@@ -158,56 +158,41 @@ func NewGeminiService(keys []string, systemPrompt string, profile BotProfile, se
 	}
 }
 
-type GeminiRequest struct {
-	Contents []struct {
-		Role  string `json:"role"`
-		Parts []struct {
-			Text string `json:"text"`
-		} `json:"parts"`
-	} `json:"contents"`
-	SystemInstruction struct {
-		Parts []struct {
-			Text string `json:"text"`
-		} `json:"parts"`
-	} `json:"system_instruction"`
-	GenerationConfig struct {
-		ResponseMimeType string `json:"response_mime_type"`
-	} `json:"generation_config"`
-}
-
 func (s *GeminiService) GetAIResponse(userPrompt string, history []AIMessage, forceSearch bool, honorific string) (string, string, error) {
 	systemPrompt, _ := buildFullPrompt(userPrompt, s.Profile, s.SystemPrompt, s.SearchService, forceSearch, honorific)
 
-	req := GeminiRequest{}
-	req.SystemInstruction.Parts = append(req.SystemInstruction.Parts, struct {
-		Text string `json:"text"`
-	}{Text: systemPrompt})
-	req.GenerationConfig.ResponseMimeType = "application/json"
-
+	// Xây dựng request bằng map để linh hoạt hơn
+	contents := []map[string]any{}
 	for _, m := range history {
 		role := "user"
 		if m.Role == "assistant" {
 			role = "model"
 		}
-		req.Contents = append(req.Contents, struct {
-			Role  string `json:"role"`
-			Parts []struct {
-				Text string `json:"text"`
-			} `json:"parts"`
-		}{Role: role, Parts: []struct {
-			Text string `json:"text"`
-		}{{Text: m.Content}}})
+		contents = append(contents, map[string]any{
+			"role":  role,
+			"parts": []map[string]string{{"text": m.Content}},
+		})
 	}
-	req.Contents = append(req.Contents, struct {
-		Role  string `json:"role"`
-		Parts []struct {
-			Text string `json:"text"`
-		} `json:"parts"`
-	}{Role: "user", Parts: []struct {
-		Text string `json:"text"`
-	}{{Text: userPrompt}}})
+	contents = append(contents, map[string]any{
+		"role":  "user",
+		"parts": []map[string]string{{"text": userPrompt}},
+	})
 
-	jsonData, _ := json.Marshal(req)
+	reqMap := map[string]any{
+		"contents": contents,
+		"system_instruction": map[string]any{
+			"parts": []map[string]string{{"text": systemPrompt}},
+		},
+		// Tắt TẤT CẢ bộ lọc an toàn để Vy không bị chặn phản hồi
+		"safetySettings": []map[string]string{
+			{"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
+			{"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
+			{"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
+			{"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
+		},
+	}
+
+	jsonData, _ := json.Marshal(reqMap)
 	var lastErr error
 
 	for i := 0; i < len(s.Keys); i++ {
@@ -240,16 +225,34 @@ func (s *GeminiService) GetAIResponse(userPrompt string, history []AIMessage, fo
 						Text string `json:"text"`
 					} `json:"parts"`
 				} `json:"content"`
+				FinishReason string `json:"finishReason"`
 			} `json:"candidates"`
 		}
 		json.Unmarshal(body, &geminiResp)
 
 		if len(geminiResp.Candidates) > 0 && len(geminiResp.Candidates[0].Content.Parts) > 0 {
-			return parseAIJSON(geminiResp.Candidates[0].Content.Parts[0].Text)
+			rawText := geminiResp.Candidates[0].Content.Parts[0].Text
+			// Gộp tất cả parts lại nếu có nhiều phần
+			for j := 1; j < len(geminiResp.Candidates[0].Content.Parts); j++ {
+				rawText += geminiResp.Candidates[0].Content.Parts[j].Text
+			}
+			fmt.Printf("🤖 [Gemma RAW] %s\n", rawText[:min(len(rawText), 200)])
+			return parseAIJSON(rawText)
 		}
+
+		// Nếu candidates trống, có thể bị safety filter chặn
+		fmt.Printf("⚠️ [Gemma] Không có candidates. Body: %s\n", string(body)[:min(len(body), 300)])
+		lastErr = fmt.Errorf("Gemma trả về kết quả rỗng")
 	}
 
 	return "", "", fmt.Errorf("tất cả các Gemini Key đều thất bại: %v", lastErr)
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 // Helpers
@@ -285,8 +288,10 @@ func buildFullPrompt(userPrompt string, p BotProfile, extra string, searchSvc *S
 2. TÍNH CÁCH: Nhân viên mới Khánh Hưng, hăng hái, ham học hỏi, thấu cảm.
 3. QUY TRÌNH: Trả lời ngắn cho xã giao, chi tiết cho kỹ thuật.
 4. NGÔN NGỮ: CHỈ DÙNG TIẾNG VIỆT. TUYỆT ĐỐI KHÔNG DÙNG TIẾNG NƯỚC NGOÀI.
-5. ĐỊNH DẠNG: Luôn trả về JSON: {"text": "...", "reaction": "emoji"}
-   (Emoji: like, love, haha, wow, sad, angry)
+5. ĐỊNH DẠNG BẮT BUỘC: CHỈ trả về DUY NHẤT một đoạn JSON hợp lệ, KHÔNG viết gì khác trước hoặc sau JSON.
+   Cấu trúc: {"text": "nội dung trả lời", "reaction": "emoji"}
+   Emoji hợp lệ: like, love, haha, wow, sad, angry
+   KHÔNG ĐƯỢC viết suy luận, giải thích hay markdown. CHỈ JSON THUẦN TÚY.
 
 [BỐI CẢNH THÊM]: %s %s`,
 		p.Name, p.Name, p.DOB, p.Education, p.Job, p.Family, p.Location,
