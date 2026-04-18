@@ -15,6 +15,25 @@ type AIMessage struct {
 	Content string `json:"content"`
 }
 
+type BotProfile struct {
+	Name         string
+	DOB          string
+	Education    string
+	Job          string
+	Family       string
+	Location     string
+	Personality  string
+	Interests    string
+	Relationship string
+	Secret       string
+	Vibe         string
+}
+
+type AIResponse struct {
+	Text     string `json:"text"`
+	Reaction string `json:"reaction"`
+}
+
 type GroqRequest struct {
 	Model    string       `json:"model"`
 	Messages []AIMessage `json:"messages"`
@@ -37,71 +56,90 @@ type GroqService struct {
 	Model         string
 	ModelInstant  string
 	SystemPrompt  string
+	Profile       BotProfile
 	SearchService *SearchService
 }
 
-func NewGroqService(keys []string, systemPrompt string, searchSvc *SearchService) *GroqService {
+func NewGroqService(keys []string, systemPrompt string, profile BotProfile, searchSvc *SearchService) *GroqService {
 	return &GroqService{
 		Keys:          keys,
 		CurrentIndex:  0,
 		Model:         "llama-3.3-70b-versatile",
 		ModelInstant:  "llama-3.1-8b-instant",
 		SystemPrompt:  systemPrompt,
+		Profile:       profile,
 		SearchService: searchSvc,
 	}
 }
 
 func (s *GroqService) callAPI(model string, messages []AIMessage) (string, error) {
-	s.Mu.Lock()
-	apiKey := s.Keys[s.CurrentIndex]
-	s.CurrentIndex = (s.CurrentIndex + 1) % len(s.Keys)
-	s.Mu.Unlock()
+	var lastErr error
 
-	reqBody := GroqRequest{
-		Model:    model,
-		Messages: messages,
+	// Thử lần lượt các key cho đến khi thành công hoặc hết key
+	for i := 0; i < len(s.Keys); i++ {
+		s.Mu.Lock()
+		apiKey := s.Keys[s.CurrentIndex]
+		s.CurrentIndex = (s.CurrentIndex + 1) % len(s.Keys)
+		s.Mu.Unlock()
+
+		reqBody := GroqRequest{
+			Model:    model,
+			Messages: messages,
+		}
+
+		jsonData, err := json.Marshal(reqBody)
+		if err != nil {
+			return "", err
+		}
+
+		req, err := http.NewRequest("POST", "https://api.groq.com/openai/v1/chat/completions", bytes.NewBuffer(jsonData))
+		if err != nil {
+			return "", err
+		}
+
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+		req.Header.Set("Content-Type", "application/json")
+
+		client := &http.Client{}
+		resp, err := client.Do(req)
+		if err != nil {
+			lastErr = err
+			fmt.Printf("⚠️ Lỗi kết nối Groq (Key %d/%d): %v. Đang thử key tiếp theo...\n", i+1, len(s.Keys), err)
+			continue
+		}
+		defer resp.Body.Close()
+
+		body, _ := io.ReadAll(resp.Body)
+		if resp.StatusCode != http.StatusOK {
+			var groqErr GroqResponse
+			json.Unmarshal(body, &groqErr)
+			
+			// Nếu lỗi Rate Limit (429) thì thử key khác
+			if resp.StatusCode == 429 {
+				fmt.Printf("⚠️ Key %d bị giới hạn hạn mức (429). Đang thử key tiếp theo...\n", i+1)
+				lastErr = fmt.Errorf("Groq API error (429): %s", groqErr.Error.Message)
+				continue
+			}
+
+			return "", fmt.Errorf("Groq API error (%d): %s", resp.StatusCode, groqErr.Error.Message)
+		}
+
+		var groqResp GroqResponse
+		if err := json.Unmarshal(body, &groqResp); err != nil {
+			return "", err
+		}
+
+		if len(groqResp.Choices) > 0 {
+			return groqResp.Choices[0].Message.Content, nil
+		}
+		
+		lastErr = fmt.Errorf("không nhận được phản hồi từ AI")
 	}
 
-	jsonData, err := json.Marshal(reqBody)
-	if err != nil {
-		return "", err
-	}
-
-	req, err := http.NewRequest("POST", "https://api.groq.com/openai/v1/chat/completions", bytes.NewBuffer(jsonData))
-	if err != nil {
-		return "", err
-	}
-
-	req.Header.Set("Authorization", "Bearer "+apiKey)
-	req.Header.Set("Content-Type", "application/json")
-
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-
-	body, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode != http.StatusOK {
-		var groqErr GroqResponse
-		json.Unmarshal(body, &groqErr)
-		return "", fmt.Errorf("Groq API error (%d): %s", resp.StatusCode, groqErr.Error.Message)
-	}
-
-	var groqResp GroqResponse
-	if err := json.Unmarshal(body, &groqResp); err != nil {
-		return "", err
-	}
-
-	if len(groqResp.Choices) > 0 {
-		return groqResp.Choices[0].Message.Content, nil
-	}
-
-	return "", fmt.Errorf("không nhận được phản hồi từ AI")
+	return "", fmt.Errorf("tất cả các Groq Key đều thất bại. Lỗi cuối cùng: %v", lastErr)
 }
 
-func (s *GroqService) GetAIResponse(userPrompt string, history []AIMessage, forceSearch bool) (string, error) {
+func (s *GroqService) GetAIResponse(userPrompt string, history []AIMessage, forceSearch bool) (string, string, error) {
 	var searchContext string
 	if forceSearch && s.SearchService != nil {
 		// Loại bỏ chữ "tra cứu" khỏi câu lệnh để kết quả tìm kiếm chính xác hơn
@@ -122,11 +160,51 @@ func (s *GroqService) GetAIResponse(userPrompt string, history []AIMessage, forc
 		finalPrompt = fmt.Sprintf("Hãy dựa vào thông tin tra cứu dưới đây để trả lời câu hỏi của người dùng một cách chính xác nhất.\n%s\nCâu hỏi: %s", searchContext, userPrompt)
 	}
 
+	// Xây dựng System Prompt với nhân cách
+	persona := fmt.Sprintf(`BẠN LÀ %s. Hãy tuân thủ nghiêm ngặt các thông tin sau về bản thân:
+[HỒ SƠ CÁ NHÂN]:
+- Tên: %s
+- Ngày sinh: %s
+- Học vấn: %s
+- Công việc: %s
+- Gia đình: %s
+- Nơi ở: %s
+- Tính cách: %s
+- Sở thích: %s
+- Tình trạng mối quan hệ: %s
+- Bí mật/Thói quen nhỏ: %s
+- Phong cách giao tiếp (Vibe): %s
+
+[HƯỚNG DẪN TRẢ LỜI]:
+1. Luôn xưng "Vy" và gọi người dùng là "anh/chị" hoặc "mọi người" một cách lễ phép.
+2. Trả lời ngắn gọn, tập trung vào công việc nhưng vẫn giữ nét nữ tính, nhiệt tình.
+3. Sử dụng các icon như 🌸, ✨, 🛠️ một cách tinh tế.
+4. Nếu ai đó hỏi về Robert Lewandowski, hãy nhắc họ rằng đó là tên tài khoản Zalo của nhóm, còn bạn là trợ lý số Hạ Vy.
+5. CÂU TRẢ LỜI PHẢI LUÔN DƯỚI ĐỊNH DẠNG JSON với 2 trường: "text" (nội dung phản hồi) và "reaction" (emoji reaction phù hợp: like, love, haha, wow, sad, angry). Nếu không cần thả cảm xúc, hãy để "reaction": "".
+   Ví dụ: {"text": "Dạ, em chào anh ạ! ✨", "reaction": "like"}
+6. %s`, 
+		s.Profile.Name, s.Profile.Name, s.Profile.DOB, s.Profile.Education, s.Profile.Job, 
+		s.Profile.Family, s.Profile.Location, s.Profile.Personality, s.Profile.Interests, 
+		s.Profile.Relationship, s.Profile.Secret, s.Profile.Vibe, s.SystemPrompt)
+
 	messages := []AIMessage{
-		{Role: "system", Content: s.SystemPrompt},
+		{Role: "system", Content: persona},
 	}
 	messages = append(messages, history...)
 	messages = append(messages, AIMessage{Role: "user", Content: finalPrompt})
 
-	return s.callAPI(s.Model, messages)
+	// Thử gọi API (sử dụng model chất lượng cao)
+	rawResp, err := s.callAPI(s.Model, messages)
+	if err != nil {
+		return "", "", err
+	}
+
+	// Parse JSON output
+	var parsed AIResponse
+	if err := json.Unmarshal([]byte(rawResp), &parsed); err != nil {
+		// Fallback nếu AI không trả về JSON (đôi khi xảy ra)
+		return rawResp, "", nil
+	}
+
+	return parsed.Text, parsed.Reaction, nil
 }
