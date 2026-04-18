@@ -297,12 +297,40 @@ func buildFullPrompt(userPrompt string, p BotProfile, extra string, searchSvc *S
 }
 
 func parseAIJSON(raw string) (string, string, error) {
-	clean := raw
-	if start := strings.Index(raw, "{"); start != -1 {
-		if end := strings.LastIndex(raw, "}"); end != -1 && end > start {
-			clean = raw[start : end+1]
+	// Bước 1: Tìm trong khối ```json ... ``` (Gemma hay trả về dạng này)
+	if idx := strings.Index(raw, "```json"); idx != -1 {
+		jsonStart := idx + 7 // bỏ qua "```json"
+		if jsonEnd := strings.Index(raw[jsonStart:], "```"); jsonEnd != -1 {
+			raw = strings.TrimSpace(raw[jsonStart : jsonStart+jsonEnd])
 		}
 	}
+
+	// Bước 2: Tìm cặp {...} cuối cùng trong chuỗi (bỏ qua phần suy luận phía trước)
+	lastEnd := strings.LastIndex(raw, "}")
+	if lastEnd == -1 {
+		return raw, "", nil
+	}
+
+	// Tìm dấu { mở tương ứng bằng cách đếm ngược
+	depth := 0
+	startPos := -1
+	for i := lastEnd; i >= 0; i-- {
+		if raw[i] == '}' {
+			depth++
+		} else if raw[i] == '{' {
+			depth--
+			if depth == 0 {
+				startPos = i
+				break
+			}
+		}
+	}
+
+	if startPos == -1 {
+		return raw, "", nil
+	}
+
+	clean := raw[startPos : lastEnd+1]
 	var parsed AIResponse
 	if err := json.Unmarshal([]byte(clean), &parsed); err != nil {
 		return raw, "", nil
