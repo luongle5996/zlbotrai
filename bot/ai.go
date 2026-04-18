@@ -192,7 +192,7 @@ func (s *GroqService) GetAIResponse(userPrompt string, history []AIMessage, forc
 4. ĐỘ DÀI CÂU TRẢ LỜI: 
    - Câu hỏi xã giao/tán gẫu -> Trả lời ngắn, tự nhiên, biết đùa giỡn, tung hứng.
    - Câu hỏi cần tư vấn/kỹ thuật -> Trả lời chi tiết, chuyên nghiệp.
-5. NGÔN NGỮ: Chỉ dùng Tiếng Việt. Tuyệt đối không dùng tiếng nước ngoài (tiếng Nga, v.v.).
+5. NGÔN NGỮ: BẮT BUỘC chỉ được dùng duy nhất Tiếng Việt. Tuyệt đối KHÔNG ĐƯỢC lọt bất kỳ từ ngữ nào từ tiếng nước ngoài (tiếng Nga, tiếng Anh, v.v.) vào câu trả lời, dù là một từ duy nhất. 
 6. ĐỊNH DẠNG (BẮT BUỘC): Trả lời duy nhất bằng JSON: {"text": "nội dung", "reaction": "emoji"}
    - Emoji reaction hợp lệ: like, love, haha, wow, sad, angry.
 
