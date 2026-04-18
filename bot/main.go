@@ -29,17 +29,27 @@ func getHonorific(client *zago.ZaloAPI, userID string) string {
 	h = "anh/chị" // Mặc định
 	info, err := client.FetchUserInfo(userID)
 	if err == nil {
-		// Thử bóc tách giới tính từ dữ liệu Zalo (thường là 0: Nam, 1: Nữ)
 		if user, ok := info.(*worker.User); ok {
-			if data, ok := user.Get("data").(map[string]any); ok {
-				if profiles, ok := data["profiles"].([]any); ok && len(profiles) > 0 {
-					if p, ok := profiles[0].(map[string]any); ok {
-						if gender, ok := p["gender"].(float64); ok {
-							if gender == 0 {
-								h = "anh"
-							} else if gender == 1 {
-								h = "chị"
-							}
+			// Thử lấy danh sách profiles trực tiếp (do thư viện đã làm phẳng data)
+			profilesObj := user.Get("profiles")
+			if profiles, ok := profilesObj.([]any); ok && len(profiles) > 0 {
+				if p, ok := profiles[0].(map[string]any); ok {
+					if genderVal, ok := p["gender"]; ok {
+						// Chuyển đổi linh hoạt các kiểu số khác nhau
+						gender := -1
+						switch v := genderVal.(type) {
+						case float64:
+							gender = int(v)
+						case int:
+							gender = v
+						case string:
+							gender, _ = strconv.Atoi(v)
+						}
+
+						if gender == 0 {
+							h = "anh"
+						} else if gender == 1 {
+							h = "chị"
 						}
 					}
 				}
