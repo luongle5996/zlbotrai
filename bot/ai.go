@@ -151,7 +151,7 @@ func NewGeminiService(keys []string, systemPrompt string, profile BotProfile, se
 	return &GeminiService{
 		Keys:          keys,
 		CurrentIndex:  0,
-		Model:         "gemma-4-31b",
+		Model:         "gemma-4-31b-it",
 		SystemPrompt:  systemPrompt,
 		Profile:       profile,
 		SearchService: searchSvc,
