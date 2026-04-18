@@ -221,11 +221,17 @@ startListening:
 				return
 			}
 
+			// Bỏ qua các tin nhắn rỗng (thường là reaction, sticker đơn thuần hoặc thông báo hệ thống)
+			cleanMsg := strings.TrimSpace(message)
+			if cleanMsg == "" {
+				return
+			}
+
+			// Chỉ trả lời khi được nhắc tên (Mention)
 			botName := client.AccountName()
-			if threadType == zago.ThreadTypeGROUP {
-				if !strings.Contains(strings.ToLower(message), strings.ToLower(botName)) {
-					return
-				}
+			if !strings.Contains(strings.ToLower(cleanMsg), strings.ToLower(botName)) && 
+			   !strings.Contains(strings.ToLower(cleanMsg), "vy") {
+				return
 			}
 
 			fmt.Printf("[%s] Nhận tin nhắn từ %s: %s\n", time.Now().Format("15:04:05"), userID, message)
