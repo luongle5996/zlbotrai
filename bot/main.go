@@ -144,6 +144,12 @@ func main() {
 		ai = NewGroqService(groqKeys, "Hãy tập trung hỗ trợ người dùng một cách chuyên nghiệp, lịch sự và khách quan.", profile, searchSvc)
 	}
 
+	maxHistory := 10 // Mặc định cho Groq
+	if provider == "gemini" {
+		maxHistory = 100 // Gemma/Gemini có token không giới hạn
+	}
+	fmt.Printf("📝 Trí nhớ Vy: %d tin nhắn gần nhất\n", maxHistory)
+
 	chatHistory := make(map[string][]AIMessage)
 	historyMu := sync.Mutex{}
 
@@ -302,8 +308,8 @@ startListening:
 			historyMu.Lock()
 			chatHistory[threadID] = append(chatHistory[threadID], AIMessage{Role: "user", Content: message})
 			chatHistory[threadID] = append(chatHistory[threadID], AIMessage{Role: "assistant", Content: aiResponse})
-			if len(chatHistory[threadID]) > 30 {
-				chatHistory[threadID] = chatHistory[threadID][len(chatHistory[threadID])-30:]
+			if len(chatHistory[threadID]) > maxHistory {
+				chatHistory[threadID] = chatHistory[threadID][len(chatHistory[threadID])-maxHistory:]
 			}
 			historyMu.Unlock()
 			
