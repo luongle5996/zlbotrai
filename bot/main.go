@@ -29,31 +29,25 @@ func getHonorific(client *zago.ZaloAPI, userID string) string {
 
 	h = "anh/chị" // Mặc định
 	info, err := client.FetchUserInfo(userID)
-	if err == nil {
-		if user, ok := info.(*worker.User); ok {
-			profilesObj := user.Get("profiles")
-			if profiles, ok := profilesObj.([]any); ok && len(profiles) > 0 {
-				if p, ok := profiles[0].(map[string]any); ok {
-					if genderVal, ok := p["gender"]; ok {
-						fmt.Printf("ℹ️ [Giới tính] User %s có gender code: %v\n", userID, genderVal)
-						gender := -1
-						switch v := genderVal.(type) {
-						case float64: gender = int(v)
-						case int: gender = v
-						case string: gender, _ = strconv.Atoi(v)
-						case json.Number:
-							val, _ := v.Int64()
-							gender = int(val)
-						}
+	if err != nil {
+		fmt.Printf("⚠️ [Giới tính] Lỗi khi lấy thông tin user %s: %v\n", userID, err)
+		return h
+	}
 
-						if gender == 0 {
-							h = "anh"
-						} else if gender == 1 {
-							h = "chị"
-						}
-					}
-				}
-			}
+	if user, ok := info.(*worker.User); ok {
+		// In ra TOÀN BỘ dữ liệu User để debug
+		allData := user.ToMap()
+		debugJSON, _ := json.MarshalIndent(allData, "", "  ")
+		fmt.Printf("🔍 [DEBUG] Dữ liệu User %s:\n%s\n", userID, string(debugJSON))
+
+		// Tìm gender ở MỌI NƠI trong dữ liệu (đệ quy)
+		gender := findGender(allData)
+		fmt.Printf("ℹ️ [Giới tính] User %s -> gender = %d\n", userID, gender)
+
+		if gender == 0 {
+			h = "anh"
+		} else if gender == 1 {
+			h = "chị"
 		}
 	}
 
@@ -64,6 +58,47 @@ func getHonorific(client *zago.ZaloAPI, userID string) string {
 		genderMu.Unlock()
 	}
 	return h
+}
+
+// findGender tìm kiếm trường "gender" trong toàn bộ cây dữ liệu
+func findGender(data any) int {
+	switch v := data.(type) {
+	case map[string]any:
+		if genderVal, ok := v["gender"]; ok {
+			return parseGenderValue(genderVal)
+		}
+		// Tìm sâu hơn trong các trường con
+		for _, val := range v {
+			if result := findGender(val); result != -1 {
+				return result
+			}
+		}
+	case []any:
+		for _, item := range v {
+			if result := findGender(item); result != -1 {
+				return result
+			}
+		}
+	}
+	return -1
+}
+
+func parseGenderValue(val any) int {
+	switch v := val.(type) {
+	case float64:
+		return int(v)
+	case int:
+		return v
+	case string:
+		n, err := strconv.Atoi(v)
+		if err == nil {
+			return n
+		}
+	case json.Number:
+		n, _ := v.Int64()
+		return int(n)
+	}
+	return -1
 }
 
 var sessionFile = "session.json"
