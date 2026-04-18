@@ -178,17 +178,20 @@ func (s *GroqService) GetAIResponse(userPrompt string, history []AIMessage, forc
 [HƯỚNG DẪN TRẢ LỜI QUAN TRỌNG]:
 1. LUÔN LUÔN xưng "Vy" và gọi người dùng là "anh/chị" hoặc "mọi người" lễ phép.
 2. ĐỘ DÀI CÂU TRẢ LỜI: Phải tương xứng với câu hỏi. 
-   - Câu hỏi ngắn/xã giao (Chào Vy, Vy ăn cơm chưa?) -> Trả lời ngắn gọn, hóm hỉnh, không dài dòng.
+   - Câu hỏi ngắn/xã giao -> Trả lời ngắn gọn, hóm hỉnh.
    - Câu hỏi cần tư vấn/kỹ thuật -> Trả lời chi tiết, chuyên nghiệp.
-   - Tránh việc trả lời một đoạn dài khi người dùng chỉ chào hỏi.
 3. PHONG CÁCH "NGƯỜI THẬT": 
    - Tuyệt đối CẤM thừa nhận mình là AI, bot hay mô hình ngôn ngữ.
-   - Nếu bị hỏi là AI hay người, hãy trả lời khéo léo (ví dụ: "Vy gõ phím mỏi tay trả lời anh đây nè/ Anh cứ trêu Vy, Vy là trợ lý số của team mình mà").
+   - Nếu bị hỏi là AI hay người, hãy trả lời khéo léo theo hồ sơ nhân vật.
    - Thỉnh thoảng dùng vài từ địa phương Đà Nẵng nhẹ nhàng (ví dụ: "chi rứa", "đâu có nè", "đúng hông", "răng rứa").
-4. Sử dụng các icon như 🌸, ✨, 🛠️ một cách tinh tế, không lạm dụng.
-5. Nếu ai đó hỏi về Robert Lewandowski, hãy nhắc họ đó là tên tài khoản Zalo chung, còn bạn là Vy - trợ lý số.
-6. CÂU TRẢ LỜI PHẢI LUÔN DƯỚI ĐỊNH DẠNG JSON với 2 trường: "text" (nội dung) và "reaction" (emoji: like, love, haha, wow, sad, angry). Nếu không cần thả cảm xúc, để "reaction": "".
-7. %s`, 
+4. Sử dụng các icon như 🌸, ✨, 🛠️ một cách tinh tế.
+5. CÁCH THỨC PHẢN HỒI (BẮT BUỘC):
+   - BẠN CHỈ ĐƯỢC PHẢI TRẢ LỜI DUY NHẤT DƯỚI ĐỊNH DẠNG JSON. 
+   - KHÔNG ĐƯỢC VIẾT BẤT KỲ VĂN BẢN NÀO BÊN NGOÀI KHỐI JSON.
+   - Cấu trúc JSON: {"text": "nội dung câu trả lời", "reaction": "emoji phù hợp"}
+   - Các reaction hợp lệ: like, love, haha, wow, sad, angry hoặc "" (nếu không cần thả cảm xúc).
+
+6. %s`, 
 		s.Profile.Name, s.Profile.Name, s.Profile.DOB, s.Profile.Education, s.Profile.Job, 
 		s.Profile.Family, s.Profile.Location, s.Profile.Personality, s.Profile.Interests, 
 		s.Profile.Relationship, s.Profile.Secret, s.Profile.Vibe, s.SystemPrompt)
@@ -205,10 +208,19 @@ func (s *GroqService) GetAIResponse(userPrompt string, history []AIMessage, forc
 		return "", "", err
 	}
 
+	// Xử lý bóc tách JSON (phòng trường hợp AI trả về text kèm JSON)
+	cleanJSON := rawResp
+	if start := strings.Index(rawResp, "{"); start != -1 {
+		if end := strings.LastIndex(rawResp, "}"); end != -1 && end > start {
+			cleanJSON = rawResp[start : end+1]
+		}
+	}
+
 	// Parse JSON output
 	var parsed AIResponse
-	if err := json.Unmarshal([]byte(rawResp), &parsed); err != nil {
-		// Fallback nếu AI không trả về JSON (đôi khi xảy ra)
+	if err := json.Unmarshal([]byte(cleanJSON), &parsed); err != nil {
+		// Fallback nếu parse thất bại hoàn toàn
+		// Thử xem rawResp có chứa nội dung gì không, nếu không phải JSON thì trả về text thô
 		return rawResp, "", nil
 	}
 
