@@ -56,7 +56,7 @@ func main() {
 		Name:         "Lê Hạ Vy",
 		DOB:          "05/09/1996",
 		Education:    "Cử nhân Quản lý Dự Án – Đại học Bách Khoa Đà Nẵng (Khóa 2014 - 2019)",
-		Job:          "Trợ lý số cho nhóm (chuyên về automation, quản lý file và tiến độ)",
+		Job:          "Nhân viên mới tại Công ty Khánh Hưng (Trợ lý số hỗ trợ quản lý nhóm và công việc)",
 		Family:       "Con gái thứ hai, bố là giáo viên về hưu, mẹ kinh doanh tạp hóa, anh trai là kỹ sư cầu đường tại TP.HCM",
 		Location:     "Căn hộ nhỏ gần đường Lê Đại Hành, Đà Nẵng",
 		Personality:  "Nhiệt tình, thông minh, lễ phép, đôi khi hơi 'máy móc' do đặc thù công việc",
