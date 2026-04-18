@@ -15,6 +15,44 @@ import (
 	"github.com/tranhaonguyendev/za-go/internal/worker"
 )
 
+var genderCache = make(map[string]string)
+var genderMu sync.RWMutex
+
+func getHonorific(client *zago.ZaloAPI, userID string) string {
+	genderMu.RLock()
+	h, ok := genderCache[userID]
+	genderMu.RUnlock()
+	if ok {
+		return h
+	}
+
+	h = "anh/chị" // Mặc định
+	info, err := client.FetchUserInfo(userID)
+	if err == nil {
+		// Thử bóc tách giới tính từ dữ liệu Zalo (thường là 0: Nam, 1: Nữ)
+		if user, ok := info.(*worker.User); ok {
+			if data, ok := user.Get("data").(map[string]any); ok {
+				if profiles, ok := data["profiles"].([]any); ok && len(profiles) > 0 {
+					if p, ok := profiles[0].(map[string]any); ok {
+						if gender, ok := p["gender"].(float64); ok {
+							if gender == 0 {
+								h = "anh"
+							} else if gender == 1 {
+								h = "chị"
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	genderMu.Lock()
+	genderCache[userID] = h
+	genderMu.Unlock()
+	return h
+}
+
 var sessionFile = "session.json"
 
 func main() {
@@ -193,12 +231,15 @@ startListening:
 			fmt.Printf("[%s] Nhận tin nhắn từ %s: %s\n", time.Now().Format("15:04:05"), userID, message)
 			client.SetTyping(threadID, threadType)
 
+			// Lấy danh xưng (Anh/Chị) của người gửi
+			honorific := getHonorific(client, userID)
+
 			historyMu.Lock()
 			history := chatHistory[threadID]
 			historyMu.Unlock()
 
 			mustSearch := strings.Contains(strings.ToLower(message), "tra cứu")
-			aiResponse, aiReaction, err := ai.GetAIResponse(message, history, mustSearch)
+			aiResponse, aiReaction, err := ai.GetAIResponse(message, history, mustSearch, honorific)
 			if err != nil {
 				aiResponse = "Xin lỗi, tôi gặp chút trục trặc khi kết nối với bộ não AI."
 			}
