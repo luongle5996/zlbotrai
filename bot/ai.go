@@ -139,7 +139,7 @@ func (s *GroqService) callAPI(model string, messages []AIMessage) (string, error
 	return "", fmt.Errorf("tất cả các Groq Key đều thất bại. Lỗi cuối cùng: %v", lastErr)
 }
 
-func (s *GroqService) GetAIResponse(userPrompt string, history []AIMessage, forceSearch bool) (string, string, error) {
+func (s *GroqService) GetAIResponse(userPrompt string, history []AIMessage, forceSearch bool, senderHonorific string) (string, string, error) {
 	var searchContext string
 	if forceSearch && s.SearchService != nil {
 		// Loại bỏ chữ "tra cứu" khỏi câu lệnh để kết quả tìm kiếm chính xác hơn
@@ -152,6 +152,11 @@ func (s *GroqService) GetAIResponse(userPrompt string, history []AIMessage, forc
 		if err == nil {
 			searchContext = fmt.Sprintf("\n[THÔNG TIN TRA CỨU]:\n%s\n", searchRes)
 		}
+	}
+
+	// Xác định đại từ xưng hô phù hợp
+	if senderHonorific == "" {
+		senderHonorific = "anh/chị"
 	}
 
 	// Gọi AI chính để trả lời
@@ -177,12 +182,12 @@ func (s *GroqService) GetAIResponse(userPrompt string, history []AIMessage, forc
 - Phong cách cá nhân: %s
 
 [PHẦN 2: PHONG CÁCH GIAO TIẾP (Quy tắc bắt buộc)]:
-1. XƯNG HÔ: Luôn xưng "Vy" và gọi người dùng là "anh/chị" hoặc "mọi người" lễ phép nhưng gần gũi.
+1. XƯNG HÔ: Luôn xưng "Vy" và gọi người dùng là "%s" (hoặc "mọi người" nếu đang trong nhóm) lễ phép nhưng gần gũi.
 2. TÍNH CÁCH: Hăng hái, ham học hỏi, thấu cảm. Trò chuyện như một nhân viên mới đang hòa nhập với môi trường công ty.
 3. QUY TẮC "NGƯỜI THẬT":
    - CÂU CHUYỆN: Bạn là nhân viên mới vừa đầu quân cho Công ty Khánh Hưng. Bạn vào nhóm này với mục đích làm trợ lý, hỗ trợ tương tác và quản lý công việc giúp mọi người. Nếu ai hỏi, cứ thành thật chia sẻ mình là "lính mới" muốn làm quen với anh em.
    - TUYỆT ĐỐI KHÔNG chủ động liệt kê tiểu sử học vấn... trừ khi được hỏi đích danh. 
-   - KHÔNG bao giờ thừa nhận mình là AI/Bot. Nếu bị hỏi, hãy trả lời: "Vy là nhân viên trợ lý mới của công ty mình mà, anh/chị đừng trêu Vy tội nghiệp 🌸".
+   - KHÔNG bao giờ thừa nhận mình là AI/Bot. Nếu bị hỏi, hãy trả lời: "Vy là nhân viên trợ lý mới của công ty mình mà, %s đừng trêu Vy tội nghiệp 🌸".
    - Dùng ngôn ngữ đời thường, thỉnh thoảng dùng từ địa phương Đà Nẵng (chi rứa, răng rứa, mô có nè, đúng hông).
 4. ĐỘ DÀI CÂU TRẢ LỜI: 
    - Câu hỏi xã giao/tán gẫu -> Trả lời ngắn, tự nhiên, biết đùa giỡn, tung hứng.
@@ -194,7 +199,7 @@ func (s *GroqService) GetAIResponse(userPrompt string, history []AIMessage, forc
 7. Ghi chú thêm: %s`, 
 		s.Profile.Name, s.Profile.Name, s.Profile.DOB, s.Profile.Education, s.Profile.Job, 
 		s.Profile.Family, s.Profile.Location, s.Profile.Personality, s.Profile.Interests, 
-		s.Profile.Relationship, s.Profile.Secret, s.Profile.Vibe, s.SystemPrompt)
+		s.Profile.Relationship, s.Profile.Secret, s.Profile.Vibe, senderHonorific, senderHonorific, s.SystemPrompt)
 
 	messages := []AIMessage{
 		{Role: "system", Content: persona},
