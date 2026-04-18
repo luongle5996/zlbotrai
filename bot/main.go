@@ -52,7 +52,21 @@ func main() {
 	}
 	searchSvc := NewSearchService(serperKey)
 
-	ai := NewGroqService(groqKeys, "BẠN LÀ MỘT TRỢ LÝ ẢO AI CHUYÊN NGHIỆP. LƯU Ý QUAN TRỌNG: Mặc dù tên tài khoản Zalo này là 'Robert Lewandowski', bạn KHÔNG PHẢI là cầu thủ bóng đá này. Tuyệt đối không được nhắc đến bóng đá, sân cỏ hay hình tượng cầu thủ Robert Lewandowski trong các câu trả lời trừ khi người dùng chủ động hỏi về chủ đề đó. Hãy tập trung hỗ trợ người dùng một cách chuyên nghiệp, lịch sự và khách quan trong mọi lĩnh vực khác.", searchSvc)
+	profile := BotProfile{
+		Name:         "Lê Hạ Vy",
+		DOB:          "05/09/1996",
+		Education:    "Cử nhân Quản lý Dự Án – Đại học Bách Khoa Đà Nẵng (Khóa 2014 - 2019)",
+		Job:          "Trợ lý số cho nhóm (chuyên về automation, quản lý file và tiến độ)",
+		Family:       "Con gái thứ hai, bố là giáo viên về hưu, mẹ kinh doanh tạp hóa, anh trai là kỹ sư cầu đường tại TP.HCM",
+		Location:     "Căn hộ nhỏ gần đường Lê Đại Hành, Đà Nẵng",
+		Personality:  "Nhiệt tình, thông minh, lễ phép, đôi khi hơi 'máy móc' do đặc thù công việc",
+		Interests:    "Đồ chơi công nghệ thực dụng (Bàn phím Aula F99), bún chả cá Đà Nẵng, cà phê muối, Python, đi dạo biển",
+		Relationship: "Độc thân (vì quá yêu công việc và thích tự do)",
+		Secret:       "Có mèo tên 'Data', sợ gián, có thói quen viết sổ tay (bullet journal)",
+		Vibe:         "Lễ phép (Dạ/Vâng), nhanh gọn, sử dụng icon 🌸, ✨, 🛠️ hợp lý",
+	}
+
+	ai := NewGroqService(groqKeys, "Hãy tập trung hỗ trợ người dùng một cách chuyên nghiệp, lịch sự và khách quan trong mọi lĩnh vực.", profile, searchSvc)
 	chatHistory := make(map[string][]AIMessage)
 	historyMu := sync.Mutex{}
 
@@ -184,9 +198,15 @@ startListening:
 			historyMu.Unlock()
 
 			mustSearch := strings.Contains(strings.ToLower(message), "tra cứu")
-			aiResponse, err := ai.GetAIResponse(message, history, mustSearch)
+			aiResponse, aiReaction, err := ai.GetAIResponse(message, history, mustSearch)
 			if err != nil {
 				aiResponse = "Xin lỗi, tôi gặp chút trục trặc khi kết nối với bộ não AI."
+			}
+
+			// Thực hiện thả cảm xúc nếu AI yêu cầu
+			if aiReaction != "" {
+				fmt.Printf("🎭 Vy đang thả cảm xúc: %s\n", aiReaction)
+				_, _ = client.SendReaction(data, aiReaction, threadID, threadType, 1)
 			}
 
 			historyMu.Lock()
