@@ -36,6 +36,9 @@ func getHonorific(client *zago.ZaloAPI, userID string) string {
 			if profiles, ok := profilesObj.([]any); ok && len(profiles) > 0 {
 				if p, ok := profiles[0].(map[string]any); ok {
 					if genderVal, ok := p["gender"]; ok {
+						// In log để debug giới tính thực tế từ Zalo
+						fmt.Printf("ℹ️ [Giới tính] User %s có gender code: %v\n", userID, genderVal)
+
 						// Chuyển đổi linh hoạt các kiểu số khác nhau
 						gender := -1
 						switch v := genderVal.(type) {
@@ -45,6 +48,9 @@ func getHonorific(client *zago.ZaloAPI, userID string) string {
 							gender = v
 						case string:
 							gender, _ = strconv.Atoi(v)
+						case json.Number:
+							val, _ := v.Int64()
+							gender = int(val)
 						}
 
 						if gender == 0 {
