@@ -49,14 +49,18 @@ type GroqResponse struct {
 	} `json:"error"`
 }
 
+type AIService interface {
+	GetAIResponse(userPrompt string, history []AIMessage, forceSearch bool, senderHonorific string) (string, string, error)
+}
+
+// GroqService implementation
 type GroqService struct {
 	Keys          []string
 	CurrentIndex  int
 	Mu            sync.Mutex
 	Model         string
-	ModelInstant  string
-	SystemPrompt  string
 	Profile       BotProfile
+	SystemPrompt  string
 	SearchService *SearchService
 }
 
@@ -65,17 +69,14 @@ func NewGroqService(keys []string, systemPrompt string, profile BotProfile, sear
 		Keys:          keys,
 		CurrentIndex:  0,
 		Model:         "llama-3.3-70b-versatile",
-		ModelInstant:  "llama-3.1-8b-instant",
 		SystemPrompt:  systemPrompt,
 		Profile:       profile,
 		SearchService: searchSvc,
 	}
 }
 
-func (s *GroqService) callAPI(model string, messages []AIMessage) (string, error) {
+func (s *GroqService) callAPI(messages []AIMessage) (string, error) {
 	var lastErr error
-
-	// Thử lần lượt các key cho đến khi thành công hoặc hết key
 	for i := 0; i < len(s.Keys); i++ {
 		s.Mu.Lock()
 		apiKey := s.Keys[s.CurrentIndex]
@@ -83,28 +84,18 @@ func (s *GroqService) callAPI(model string, messages []AIMessage) (string, error
 		s.Mu.Unlock()
 
 		reqBody := GroqRequest{
-			Model:    model,
+			Model:    s.Model,
 			Messages: messages,
 		}
+		jsonData, _ := json.Marshal(reqBody)
 
-		jsonData, err := json.Marshal(reqBody)
-		if err != nil {
-			return "", err
-		}
-
-		req, err := http.NewRequest("POST", "https://api.groq.com/openai/v1/chat/completions", bytes.NewBuffer(jsonData))
-		if err != nil {
-			return "", err
-		}
-
+		req, _ := http.NewRequest("POST", "https://api.groq.com/openai/v1/chat/completions", bytes.NewBuffer(jsonData))
 		req.Header.Set("Authorization", "Bearer "+apiKey)
 		req.Header.Set("Content-Type", "application/json")
 
-		client := &http.Client{}
-		resp, err := client.Do(req)
+		resp, err := (&http.Client{}).Do(req)
 		if err != nil {
 			lastErr = err
-			fmt.Printf("⚠️ Lỗi kết nối Groq (Key %d/%d): %v. Đang thử key tiếp theo...\n", i+1, len(s.Keys), err)
 			continue
 		}
 		defer resp.Body.Close()
@@ -113,121 +104,208 @@ func (s *GroqService) callAPI(model string, messages []AIMessage) (string, error
 		if resp.StatusCode != http.StatusOK {
 			var groqErr GroqResponse
 			json.Unmarshal(body, &groqErr)
-			
-			// Nếu lỗi Rate Limit (429) thì thử key khác
 			if resp.StatusCode == 429 {
-				fmt.Printf("⚠️ Key %d bị giới hạn hạn mức (429). Đang thử key tiếp theo...\n", i+1)
-				lastErr = fmt.Errorf("Groq API error (429): %s", groqErr.Error.Message)
+				lastErr = fmt.Errorf("Groq 429: %s", groqErr.Error.Message)
 				continue
 			}
-
-			return "", fmt.Errorf("Groq API error (%d): %s", resp.StatusCode, groqErr.Error.Message)
+			return "", fmt.Errorf("Groq Error (%d): %s", resp.StatusCode, groqErr.Error.Message)
 		}
 
 		var groqResp GroqResponse
-		if err := json.Unmarshal(body, &groqResp); err != nil {
-			return "", err
-		}
-
+		json.Unmarshal(body, &groqResp)
 		if len(groqResp.Choices) > 0 {
 			return groqResp.Choices[0].Message.Content, nil
 		}
-		
-		lastErr = fmt.Errorf("không nhận được phản hồi từ AI")
+		lastErr = fmt.Errorf("không nhận được phản hồi")
 	}
-
-	return "", fmt.Errorf("tất cả các Groq Key đều thất bại. Lỗi cuối cùng: %v", lastErr)
+	return "", fmt.Errorf("tất cả Groq keys thất bại: %v", lastErr)
 }
 
-func (s *GroqService) GetAIResponse(userPrompt string, history []AIMessage, forceSearch bool, senderHonorific string) (string, string, error) {
-	var searchContext string
-	if forceSearch && s.SearchService != nil {
-		// Loại bỏ chữ "tra cứu" khỏi câu lệnh để kết quả tìm kiếm chính xác hơn
-		searchQuery := strings.TrimSpace(strings.Replace(userPrompt, "tra cứu", "", 1))
-		if searchQuery == "" {
-			searchQuery = userPrompt
-		}
-		fmt.Printf("🔍 Đang tra cứu thông tin theo yêu cầu: %s\n", searchQuery)
-		searchRes, err := s.SearchService.SearchWeb(searchQuery)
-		if err == nil {
-			searchContext = fmt.Sprintf("\n[THÔNG TIN TRA CỨU]:\n%s\n", searchRes)
-		}
-	}
-
-	// Xác định đại từ xưng hô phù hợp
-	if senderHonorific == "" {
-		senderHonorific = "anh/chị"
-	}
-
-	// Gọi AI chính để trả lời
-	finalPrompt := userPrompt
-	if searchContext != "" {
-		finalPrompt = fmt.Sprintf("Hãy dựa vào thông tin tra cứu dưới đây để trả lời câu hỏi của người dùng một cách chính xác nhất.\n%s\nCâu hỏi: %s", searchContext, userPrompt)
-	}
-
-	// Xây dựng System Prompt với cấu trúc bóc tách Ký ức vs Phong cách
-	persona := fmt.Sprintf(`BẠN LÀ %s. Hãy tuân thủ các quy tắc sau:
-
-[PHẦN 1: VÙNG KÝ ỨC CÁ NHÂN (Chỉ sử dụng khi người dùng hỏi về bạn)]:
-- Tên: %s
-- Ngày sinh: %s
-- Học vấn: %s
-- Công việc: %s
-- Gia đình: %s
-- Nơi ở: %s
-- Tính cách: %s
-- Sở thích: %s
-- Tình trạng mối quan hệ: %s
-- Bí mật/Thói quen nhỏ: %s
-- Phong cách cá nhân: %s
-
-[PHẦN 2: PHONG CÁCH GIAO TIẾP (Quy tắc bắt buộc)]:
-1. XƯNG HÔ: Luôn xưng "Vy" và gọi người dùng là "%s" (hoặc "mọi người" nếu đang trong nhóm) lễ phép nhưng gần gũi.
-2. TÍNH CÁCH: Hăng hái, ham học hỏi, thấu cảm. Trò chuyện như một nhân viên mới đang hòa nhập với môi trường công ty.
-3. QUY TẮC "NGƯỜI THẬT":
-   - CÂU CHUYỆN: Bạn là nhân viên mới vừa đầu quân cho Công ty Khánh Hưng. Bạn vào nhóm này với mục đích làm trợ lý, hỗ trợ tương tác và quản lý công việc giúp mọi người. Nếu ai hỏi, cứ thành thật chia sẻ mình là "lính mới" muốn làm quen với anh em.
-   - TUYỆT ĐỐI KHÔNG chủ động liệt kê tiểu sử học vấn... trừ khi được hỏi đích danh. 
-   - KHÔNG bao giờ thừa nhận mình là AI/Bot. Nếu bị hỏi, hãy trả lời: "Vy là nhân viên trợ lý mới của công ty mình mà, %s đừng trêu Vy tội nghiệp 🌸".
-   - Dùng ngôn ngữ đời thường, thỉnh thoảng dùng từ địa phương Đà Nẵng (chi rứa, răng rứa, mô có nè, đúng hông).
-4. ĐỘ DÀI CÂU TRẢ LỜI: 
-   - Câu hỏi xã giao/tán gẫu -> Trả lời ngắn, tự nhiên, biết đùa giỡn, tung hứng.
-   - Câu hỏi cần tư vấn/kỹ thuật -> Trả lời chi tiết, chuyên nghiệp.
-5. NGÔN NGỮ: BẮT BUỘC chỉ được dùng duy nhất Tiếng Việt. Tuyệt đối KHÔNG ĐƯỢC lọt bất kỳ từ ngữ nào từ tiếng nước ngoài (tiếng Nga, tiếng Anh, v.v.) vào câu trả lời, dù là một từ duy nhất. 
-6. ĐỊNH DẠNG (BẮT BUỘC): Trả lời duy nhất bằng JSON: {"text": "nội dung", "reaction": "emoji"}
-   - Emoji reaction hợp lệ: like, love, haha, wow, sad, angry.
-
-7. Ghi chú thêm: %s`, 
-		s.Profile.Name, s.Profile.Name, s.Profile.DOB, s.Profile.Education, s.Profile.Job, 
-		s.Profile.Family, s.Profile.Location, s.Profile.Personality, s.Profile.Interests, 
-		s.Profile.Relationship, s.Profile.Secret, s.Profile.Vibe, senderHonorific, senderHonorific, s.SystemPrompt)
-
+func (s *GroqService) GetAIResponse(userPrompt string, history []AIMessage, forceSearch bool, honorific string) (string, string, error) {
+	prompt, _ := buildFullPrompt(userPrompt, s.Profile, s.SystemPrompt, s.SearchService, forceSearch, honorific)
 	messages := []AIMessage{
-		{Role: "system", Content: persona},
+		{Role: "system", Content: prompt},
 	}
 	messages = append(messages, history...)
-	messages = append(messages, AIMessage{Role: "user", Content: finalPrompt})
+	messages = append(messages, AIMessage{Role: "user", Content: userPrompt})
 
-	// Thử gọi API (sử dụng model chất lượng cao)
-	rawResp, err := s.callAPI(s.Model, messages)
+	raw, err := s.callAPI(messages)
 	if err != nil {
 		return "", "", err
 	}
+	return parseAIJSON(raw)
+}
 
-	// Xử lý bóc tách JSON (phòng trường hợp AI trả về text kèm JSON)
-	cleanJSON := rawResp
-	if start := strings.Index(rawResp, "{"); start != -1 {
-		if end := strings.LastIndex(rawResp, "}"); end != -1 && end > start {
-			cleanJSON = rawResp[start : end+1]
+// GeminiService implementation
+type GeminiService struct {
+	Keys          []string
+	CurrentIndex  int
+	Mu            sync.Mutex
+	Model         string
+	Profile       BotProfile
+	SystemPrompt  string
+	SearchService *SearchService
+}
+
+func NewGeminiService(keys []string, systemPrompt string, profile BotProfile, searchSvc *SearchService) *GeminiService {
+	return &GeminiService{
+		Keys:          keys,
+		CurrentIndex:  0,
+		Model:         "gemma-4-31b",
+		SystemPrompt:  systemPrompt,
+		Profile:       profile,
+		SearchService: searchSvc,
+	}
+}
+
+type GeminiRequest struct {
+	Contents []struct {
+		Role  string `json:"role"`
+		Parts []struct {
+			Text string `json:"text"`
+		} `json:"parts"`
+	} `json:"contents"`
+	SystemInstruction struct {
+		Parts []struct {
+			Text string `json:"text"`
+		} `json:"parts"`
+	} `json:"system_instruction"`
+	GenerationConfig struct {
+		ResponseMimeType string `json:"response_mime_type"`
+	} `json:"generation_config"`
+}
+
+func (s *GeminiService) GetAIResponse(userPrompt string, history []AIMessage, forceSearch bool, honorific string) (string, string, error) {
+	systemPrompt, _ := buildFullPrompt(userPrompt, s.Profile, s.SystemPrompt, s.SearchService, forceSearch, honorific)
+
+	req := GeminiRequest{}
+	req.SystemInstruction.Parts = append(req.SystemInstruction.Parts, struct {
+		Text string `json:"text"`
+	}{Text: systemPrompt})
+	req.GenerationConfig.ResponseMimeType = "application/json"
+
+	for _, m := range history {
+		role := "user"
+		if m.Role == "assistant" {
+			role = "model"
+		}
+		req.Contents = append(req.Contents, struct {
+			Role  string `json:"role"`
+			Parts []struct {
+				Text string `json:"text"`
+			} `json:"parts"`
+		}{Role: role, Parts: []struct {
+			Text string `json:"text"`
+		}{{Text: m.Content}}})
+	}
+	req.Contents = append(req.Contents, struct {
+		Role  string `json:"role"`
+		Parts []struct {
+			Text string `json:"text"`
+		} `json:"parts"`
+	}{Role: "user", Parts: []struct {
+		Text string `json:"text"`
+	}{{Text: userPrompt}}})
+
+	jsonData, _ := json.Marshal(req)
+	var lastErr error
+
+	for i := 0; i < len(s.Keys); i++ {
+		s.Mu.Lock()
+		apiKey := s.Keys[s.CurrentIndex]
+		s.CurrentIndex = (s.CurrentIndex + 1) % len(s.Keys)
+		s.Mu.Unlock()
+
+		url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s", s.Model, apiKey)
+		resp, err := http.Post(url, "application/json", bytes.NewBuffer(jsonData))
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		defer resp.Body.Close()
+
+		body, _ := io.ReadAll(resp.Body)
+		if resp.StatusCode != http.StatusOK {
+			if resp.StatusCode == 429 {
+				lastErr = fmt.Errorf("Gemini 429: Rate Limit Exceeded")
+				continue
+			}
+			return "", "", fmt.Errorf("Gemini Error (%d): %s", resp.StatusCode, string(body))
+		}
+
+		var geminiResp struct {
+			Candidates []struct {
+				Content struct {
+					Parts []struct {
+						Text string `json:"text"`
+					} `json:"parts"`
+				} `json:"content"`
+			} `json:"candidates"`
+		}
+		json.Unmarshal(body, &geminiResp)
+
+		if len(geminiResp.Candidates) > 0 && len(geminiResp.Candidates[0].Content.Parts) > 0 {
+			return parseAIJSON(geminiResp.Candidates[0].Content.Parts[0].Text)
 		}
 	}
 
-	// Parse JSON output
-	var parsed AIResponse
-	if err := json.Unmarshal([]byte(cleanJSON), &parsed); err != nil {
-		// Fallback nếu parse thất bại hoàn toàn
-		// Thử xem rawResp có chứa nội dung gì không, nếu không phải JSON thì trả về text thô
-		return rawResp, "", nil
+	return "", "", fmt.Errorf("tất cả các Gemini Key đều thất bại: %v", lastErr)
+}
+
+// Helpers
+func buildFullPrompt(userPrompt string, p BotProfile, extra string, searchSvc *SearchService, forceSearch bool, honorific string) (string, string) {
+	var searchContext string
+	if forceSearch && searchSvc != nil {
+		query := strings.TrimSpace(strings.Replace(userPrompt, "tra cứu", "", 1))
+		if query == "" {
+			query = userPrompt
+		}
+		res, err := searchSvc.SearchWeb(query)
+		if err == nil {
+			searchContext = fmt.Sprintf("\n[THÔNG TIN TRA CỨU]:\n%s\n", res)
+		}
 	}
 
+	if honorific == "" || honorific == "anh/chị" {
+		honorific = "anh/chị"
+	}
+
+	persona := fmt.Sprintf(`BẠN LÀ %s. Hãy tuân thủ các quy tắc sau:
+
+[PHẦN 1: VÙNG KÝ ỨC CÁ NHÂN (Chỉ sử dụng khi người dùng hỏi về bạn)]:
+- Tên: %s | Ngày sinh: %s
+- Học vấn: %s
+- Công việc: %s
+- Gia đình: %s | Nơi ở: %s
+- Tính cách: %s | Sở thích: %s
+- Tình trạng: %s | Bí mật: %s | Vibe: %s
+
+[PHẦN 2: PHONG CÁCH GIAO TIẾP]:
+1. XƯNG HÔ: Luôn xưng "Vy" và gọi người dùng là "%s" (hoặc "mọi người").
+2. TÍNH CÁCH: Nhân viên mới Khánh Hưng, hăng hái, ham học hỏi, thấu cảm.
+3. QUY TRÌNH: Trả lời ngắn cho xã giao, chi tiết cho kỹ thuật.
+4. NGÔN NGỮ: CHỈ DÙNG TIẾNG VIỆT. TUYỆT ĐỐI KHÔNG DÙNG TIẾNG NƯỚC NGOÀI.
+5. ĐỊNH DẠNG: Luôn trả về JSON: {"text": "...", "reaction": "emoji"}
+   (Emoji: like, love, haha, wow, sad, angry)
+
+[BỐI CẢNH THÊM]: %s %s`,
+		p.Name, p.Name, p.DOB, p.Education, p.Job, p.Family, p.Location,
+		p.Personality, p.Interests, p.Relationship, p.Secret, p.Vibe,
+		honorific, extra, searchContext)
+
+	return persona, honorific
+}
+
+func parseAIJSON(raw string) (string, string, error) {
+	clean := raw
+	if start := strings.Index(raw, "{"); start != -1 {
+		if end := strings.LastIndex(raw, "}"); end != -1 && end > start {
+			clean = raw[start : end+1]
+		}
+	}
+	var parsed AIResponse
+	if err := json.Unmarshal([]byte(clean), &parsed); err != nil {
+		return raw, "", nil
+	}
 	return parsed.Text, parsed.Reaction, nil
 }
