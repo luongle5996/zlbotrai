@@ -227,10 +227,14 @@ startListening:
 				return
 			}
 
-			// Chỉ trả lời khi được nhắc tên (Mention)
+			// Kiểm tra điều kiện nhắc tên
 			botName := client.AccountName()
-			if !strings.Contains(strings.ToLower(cleanMsg), strings.ToLower(botName)) && 
-			   !strings.Contains(strings.ToLower(cleanMsg), "vy") {
+			isMentioned := strings.Contains(strings.ToLower(cleanMsg), strings.ToLower(botName)) || 
+						  strings.Contains(strings.ToLower(cleanMsg), "vy")
+
+			// Trong Nhóm: Bắt buộc phải nhắc tên mới trả lời
+			// Chat riêng: Trả lời luôn, không cần nhắc tên
+			if threadType == zago.ThreadTypeGROUP && !isMentioned {
 				return
 			}
 
