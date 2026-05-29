@@ -138,9 +138,9 @@ func main() {
 		Vibe:         "Lễ phép (Dạ/Vâng), nhanh gọn, sử dụng icon 🌸, ✨, 🛠️ hợp lý",
 	}
 
-	// AI Setup: Hỗ trợ cả Groq và Gemini
+	// AI Setup: Hỗ trợ Groq, Gemini, OpenAI-compatible và Anthropic-compatible providers như FreeModel
 	var ai AIService
-	provider := os.Getenv("MODEL_PROVIDER")
+	provider := strings.ToLower(strings.TrimSpace(os.Getenv("MODEL_PROVIDER")))
 	if provider == "" {
 		provider = "groq" // Mặc định
 	}
@@ -161,6 +161,68 @@ func main() {
 		}
 		fmt.Printf("🚀 Đang sử dụng 'bộ não' Google AI (%d keys)\n", len(geminiKeys))
 		ai = NewGeminiService(geminiKeys, "Hãy tập trung hỗ trợ người dùng một cách chuyên nghiệp, lịch sự và khách quan.", profile, searchSvc)
+	} else if provider == "freemodel" {
+		freeModelKeysStr := os.Getenv("FREEMODEL_KEYS")
+		var freeModelKeys []string
+		if freeModelKeysStr != "" {
+			freeModelKeys = strings.Split(freeModelKeysStr, ",")
+		} else {
+			oldKey := os.Getenv("FREEMODEL_KEY")
+			if oldKey != "" {
+				freeModelKeys = []string{oldKey}
+			} else {
+				log.Fatal("LỖI: Thiếu biến môi trường FREEMODEL_KEYS")
+			}
+		}
+
+		freeModelBaseURL := strings.TrimSpace(os.Getenv("FREEMODEL_BASE_URL"))
+		if freeModelBaseURL == "" {
+			freeModelBaseURL = "https://api.freemodel.dev/v1"
+		}
+		freeModelModel := strings.TrimSpace(os.Getenv("FREEMODEL_MODEL"))
+		if freeModelModel == "" {
+			freeModelModel = "gpt-5.5"
+		}
+
+		fmt.Printf("🚀 Đang sử dụng 'bộ não' FreeModel (%s)\n", freeModelModel)
+		ai = NewOpenAICompatibleService("FreeModel", freeModelBaseURL, freeModelModel, freeModelKeys, "Hãy tập trung hỗ trợ người dùng một cách chuyên nghiệp, lịch sự và khách quan.", profile, searchSvc)
+	} else if provider == "freemodel_cc" || provider == "freemodel_claude" {
+		freeModelKeysStr := os.Getenv("FREEMODEL_CC_KEYS")
+		var freeModelKeys []string
+		if freeModelKeysStr != "" {
+			freeModelKeys = strings.Split(freeModelKeysStr, ",")
+		} else {
+			oldKey := os.Getenv("FREEMODEL_CC_KEY")
+			if oldKey == "" {
+				oldKey = os.Getenv("FREEMODEL_KEY")
+			}
+			if oldKey != "" {
+				freeModelKeys = []string{oldKey}
+			} else {
+				log.Fatal("LỖI: Thiếu biến môi trường FREEMODEL_CC_KEYS")
+			}
+		}
+
+		freeModelBaseURL := strings.TrimSpace(os.Getenv("FREEMODEL_CC_BASE_URL"))
+		if freeModelBaseURL == "" {
+			freeModelBaseURL = "https://cc.freemodel.dev"
+		}
+		freeModelModel := strings.TrimSpace(os.Getenv("FREEMODEL_CC_MODEL"))
+		if freeModelModel == "" {
+			freeModelModel = strings.TrimSpace(os.Getenv("FREEMODEL_MODEL"))
+		}
+		if freeModelModel == "" {
+			freeModelModel = "claude-sonnet-4-5"
+		}
+		maxTokens := 2048
+		if rawMaxTokens := strings.TrimSpace(os.Getenv("FREEMODEL_CC_MAX_TOKENS")); rawMaxTokens != "" {
+			if parsed, err := strconv.Atoi(rawMaxTokens); err == nil && parsed > 0 {
+				maxTokens = parsed
+			}
+		}
+
+		fmt.Printf("🚀 Đang sử dụng 'bộ não' FreeModel Claude Code (%s)\n", freeModelModel)
+		ai = NewAnthropicCompatibleService("FreeModel Claude Code", freeModelBaseURL, freeModelModel, maxTokens, freeModelKeys, "Hãy tập trung hỗ trợ người dùng một cách chuyên nghiệp, lịch sự và khách quan.", profile, searchSvc)
 	} else {
 		groqKeysStr := os.Getenv("GROQ_KEYS")
 		var groqKeys []string
@@ -176,6 +238,10 @@ func main() {
 	maxHistory := 10 // Mặc định cho Groq
 	if provider == "gemini" {
 		maxHistory = 100 // Gemma/Gemini có token không giới hạn
+	} else if provider == "freemodel" {
+		maxHistory = 50
+	} else if provider == "freemodel_cc" || provider == "freemodel_claude" {
+		maxHistory = 50
 	}
 	fmt.Printf("📝 Trí nhớ Vy: %d tin nhắn gần nhất\n", maxHistory)
 
@@ -303,8 +369,8 @@ startListening:
 
 			// Kiểm tra điều kiện nhắc tên
 			botName := client.AccountName()
-			isMentioned := strings.Contains(strings.ToLower(cleanMsg), strings.ToLower(botName)) || 
-						  strings.Contains(strings.ToLower(cleanMsg), "vy")
+			isMentioned := strings.Contains(strings.ToLower(cleanMsg), strings.ToLower(botName)) ||
+				strings.Contains(strings.ToLower(cleanMsg), "vy")
 
 			// Trong Nhóm: Bắt buộc phải nhắc tên mới trả lời
 			// Chat riêng: Trả lời luôn, không cần nhắc tên
@@ -341,12 +407,12 @@ startListening:
 				chatHistory[threadID] = chatHistory[threadID][len(chatHistory[threadID])-maxHistory:]
 			}
 			historyMu.Unlock()
-			
+
 			// Giả lập thời gian đánh máy dựa trên độ dài tin nhắn
 			// Tốc độ đánh máy trung bình: ~25 ký tự/giây
 			charCount := len(aiResponse)
 			typingSpeed := 15 + rand.Intn(15) // Tốc độ từ 15-30 ký tự mỗi giây
-			
+
 			delay := charCount / typingSpeed
 			if delay < 2 {
 				delay = 2 // Chờ ít nhất 2 giây
@@ -354,7 +420,7 @@ startListening:
 			if delay > 12 {
 				delay = 12 // Chờ tối đa 12 giây để không quá lâu
 			}
-			
+
 			fmt.Printf("... Tin nhắn dài %d ký tự. Đang giả lập đánh máy trong %d giây\n", charCount, delay)
 			time.Sleep(time.Duration(delay) * time.Second)
 

@@ -35,7 +35,7 @@ type AIResponse struct {
 }
 
 type GroqRequest struct {
-	Model    string       `json:"model"`
+	Model    string      `json:"model"`
 	Messages []AIMessage `json:"messages"`
 }
 
@@ -49,8 +49,250 @@ type GroqResponse struct {
 	} `json:"error"`
 }
 
+type OpenAICompatibleService struct {
+	Keys          []string
+	CurrentIndex  int
+	Mu            sync.Mutex
+	ProviderName  string
+	BaseURL       string
+	Model         string
+	Profile       BotProfile
+	SystemPrompt  string
+	SearchService *SearchService
+}
+
+type AnthropicMessage struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
+type AnthropicRequest struct {
+	Model     string             `json:"model"`
+	MaxTokens int                `json:"max_tokens"`
+	System    string             `json:"system"`
+	Messages  []AnthropicMessage `json:"messages"`
+}
+
+type AnthropicResponse struct {
+	Content []struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+	} `json:"content"`
+	Error struct {
+		Type    string `json:"type"`
+		Message string `json:"message"`
+	} `json:"error"`
+}
+
+type AnthropicCompatibleService struct {
+	Keys          []string
+	CurrentIndex  int
+	Mu            sync.Mutex
+	ProviderName  string
+	BaseURL       string
+	Model         string
+	MaxTokens     int
+	Profile       BotProfile
+	SystemPrompt  string
+	SearchService *SearchService
+}
+
 type AIService interface {
 	GetAIResponse(userPrompt string, history []AIMessage, forceSearch bool, senderHonorific string) (string, string, error)
+}
+
+func NewOpenAICompatibleService(providerName, baseURL, model string, keys []string, systemPrompt string, profile BotProfile, searchSvc *SearchService) *OpenAICompatibleService {
+	return &OpenAICompatibleService{
+		Keys:          keys,
+		CurrentIndex:  0,
+		ProviderName:  providerName,
+		BaseURL:       strings.TrimRight(baseURL, "/"),
+		Model:         model,
+		SystemPrompt:  systemPrompt,
+		Profile:       profile,
+		SearchService: searchSvc,
+	}
+}
+
+func NewFreeModelService(keys []string, systemPrompt string, profile BotProfile, searchSvc *SearchService) *OpenAICompatibleService {
+	return NewOpenAICompatibleService(
+		"FreeModel",
+		"https://api.freemodel.dev/v1",
+		"gpt-5.5",
+		keys,
+		systemPrompt,
+		profile,
+		searchSvc,
+	)
+}
+
+func (s *OpenAICompatibleService) callAPI(messages []AIMessage) (string, error) {
+	var lastErr error
+	for i := 0; i < len(s.Keys); i++ {
+		s.Mu.Lock()
+		apiKey := strings.TrimSpace(s.Keys[s.CurrentIndex])
+		s.CurrentIndex = (s.CurrentIndex + 1) % len(s.Keys)
+		s.Mu.Unlock()
+		if apiKey == "" {
+			lastErr = fmt.Errorf("API key rỗng")
+			continue
+		}
+
+		reqBody := GroqRequest{
+			Model:    s.Model,
+			Messages: messages,
+		}
+		jsonData, _ := json.Marshal(reqBody)
+
+		req, _ := http.NewRequest("POST", s.BaseURL+"/chat/completions", bytes.NewBuffer(jsonData))
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := (&http.Client{}).Do(req)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			var apiErr GroqResponse
+			json.Unmarshal(body, &apiErr)
+			message := apiErr.Error.Message
+			if message == "" {
+				message = string(body)
+			}
+			if resp.StatusCode == http.StatusTooManyRequests {
+				lastErr = fmt.Errorf("%s 429: %s", s.ProviderName, message)
+				continue
+			}
+			return "", fmt.Errorf("%s Error (%d): %s", s.ProviderName, resp.StatusCode, message)
+		}
+
+		var apiResp GroqResponse
+		json.Unmarshal(body, &apiResp)
+		if len(apiResp.Choices) > 0 {
+			return apiResp.Choices[0].Message.Content, nil
+		}
+		lastErr = fmt.Errorf("không nhận được phản hồi")
+	}
+	return "", fmt.Errorf("tất cả %s keys thất bại: %v", s.ProviderName, lastErr)
+}
+
+func (s *OpenAICompatibleService) GetAIResponse(userPrompt string, history []AIMessage, forceSearch bool, honorific string) (string, string, error) {
+	prompt, _ := buildFullPrompt(userPrompt, s.Profile, s.SystemPrompt, s.SearchService, forceSearch, honorific)
+	messages := []AIMessage{
+		{Role: "system", Content: prompt},
+	}
+	messages = append(messages, history...)
+	messages = append(messages, AIMessage{Role: "user", Content: userPrompt})
+
+	raw, err := s.callAPI(messages)
+	if err != nil {
+		return "", "", err
+	}
+	return parseAIJSON(raw)
+}
+
+func NewAnthropicCompatibleService(providerName, baseURL, model string, maxTokens int, keys []string, systemPrompt string, profile BotProfile, searchSvc *SearchService) *AnthropicCompatibleService {
+	if maxTokens <= 0 {
+		maxTokens = 2048
+	}
+	return &AnthropicCompatibleService{
+		Keys:          keys,
+		CurrentIndex:  0,
+		ProviderName:  providerName,
+		BaseURL:       strings.TrimRight(baseURL, "/"),
+		Model:         model,
+		MaxTokens:     maxTokens,
+		SystemPrompt:  systemPrompt,
+		Profile:       profile,
+		SearchService: searchSvc,
+	}
+}
+
+func (s *AnthropicCompatibleService) callAPI(systemPrompt string, messages []AnthropicMessage) (string, error) {
+	var lastErr error
+	for i := 0; i < len(s.Keys); i++ {
+		s.Mu.Lock()
+		apiKey := strings.TrimSpace(s.Keys[s.CurrentIndex])
+		s.CurrentIndex = (s.CurrentIndex + 1) % len(s.Keys)
+		s.Mu.Unlock()
+		if apiKey == "" {
+			lastErr = fmt.Errorf("API key rỗng")
+			continue
+		}
+
+		reqBody := AnthropicRequest{
+			Model:     s.Model,
+			MaxTokens: s.MaxTokens,
+			System:    systemPrompt,
+			Messages:  messages,
+		}
+		jsonData, _ := json.Marshal(reqBody)
+
+		req, _ := http.NewRequest("POST", s.BaseURL+"/v1/messages", bytes.NewBuffer(jsonData))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("x-api-key", apiKey)
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+		req.Header.Set("anthropic-version", "2023-06-01")
+
+		resp, err := (&http.Client{}).Do(req)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			var apiErr AnthropicResponse
+			json.Unmarshal(body, &apiErr)
+			message := apiErr.Error.Message
+			if message == "" {
+				message = string(body)
+			}
+			if resp.StatusCode == http.StatusTooManyRequests {
+				lastErr = fmt.Errorf("%s 429: %s", s.ProviderName, message)
+				continue
+			}
+			return "", fmt.Errorf("%s Error (%d): %s", s.ProviderName, resp.StatusCode, message)
+		}
+
+		var apiResp AnthropicResponse
+		json.Unmarshal(body, &apiResp)
+		var text strings.Builder
+		for _, part := range apiResp.Content {
+			if part.Type == "" || part.Type == "text" {
+				text.WriteString(part.Text)
+			}
+		}
+		if text.Len() > 0 {
+			return text.String(), nil
+		}
+		lastErr = fmt.Errorf("không nhận được phản hồi")
+	}
+	return "", fmt.Errorf("tất cả %s keys thất bại: %v", s.ProviderName, lastErr)
+}
+
+func (s *AnthropicCompatibleService) GetAIResponse(userPrompt string, history []AIMessage, forceSearch bool, honorific string) (string, string, error) {
+	prompt, _ := buildFullPrompt(userPrompt, s.Profile, s.SystemPrompt, s.SearchService, forceSearch, honorific)
+	messages := []AnthropicMessage{}
+	for _, item := range history {
+		role := item.Role
+		if role != "assistant" {
+			role = "user"
+		}
+		messages = append(messages, AnthropicMessage{Role: role, Content: item.Content})
+	}
+	messages = append(messages, AnthropicMessage{Role: "user", Content: userPrompt})
+
+	raw, err := s.callAPI(prompt, messages)
+	if err != nil {
+		return "", "", err
+	}
+	return parseAIJSON(raw)
 }
 
 // GroqService implementation
