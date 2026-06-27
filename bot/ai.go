@@ -579,8 +579,73 @@ func parseAIJSON(raw string) (string, string, error) {
 
 	clean := raw[startPos : lastEnd+1]
 	var parsed AIResponse
-	if err := json.Unmarshal([]byte(clean), &parsed); err != nil {
-		return raw, "", nil
+	if err := json.Unmarshal([]byte(clean), &parsed); err == nil {
+		return parsed.Text, parsed.Reaction, nil
 	}
-	return parsed.Text, parsed.Reaction, nil
+
+	// Fallback: Tự bóc tách thủ công nếu JSON bị lỗi định dạng (thường do dấu ngoặc kép lồng nhau như "gà mới" mà không được escape)
+	text := extractJSONField(clean, "text")
+	reaction := extractJSONField(clean, "reaction")
+	if text != "" {
+		return text, reaction, nil
+	}
+
+	return raw, "", nil
+}
+
+// extractJSONField trích xuất giá trị trường trong chuỗi JSON thủ công kể cả khi JSON bị lỗi nháy kép lồng nhau
+func extractJSONField(jsonStr, key string) string {
+	keyPattern := `"` + key + `"`
+	idx := strings.Index(jsonStr, keyPattern)
+	if idx == -1 {
+		return ""
+	}
+	afterKey := jsonStr[idx+len(keyPattern):]
+	colonIdx := strings.Index(afterKey, ":")
+	if colonIdx == -1 {
+		return ""
+	}
+	afterColon := afterKey[colonIdx+1:]
+	startQuote := strings.Index(afterColon, `"`)
+	if startQuote == -1 {
+		return ""
+	}
+	valPart := afterColon[startQuote+1:]
+
+	var result strings.Builder
+	escaped := false
+	for i := 0; i < len(valPart); i++ {
+		char := valPart[i]
+		if escaped {
+			result.WriteByte(char)
+			escaped = false
+			continue
+		}
+		if char == '\\' {
+			escaped = true
+			continue
+		}
+		if char == '"' {
+			// Xác định xem đây có phải nháy kép kết thúc trường hay không
+			isEnd := false
+			for j := i + 1; j < len(valPart); j++ {
+				nextChar := valPart[j]
+				if nextChar == ' ' || nextChar == '\t' || nextChar == '\r' || nextChar == '\n' {
+					continue
+				}
+				if nextChar == ',' || nextChar == '}' {
+					isEnd = true
+				}
+				break
+			}
+			if i == len(valPart)-1 {
+				isEnd = true
+			}
+			if isEnd {
+				break
+			}
+		}
+		result.WriteByte(char)
+	}
+	return strings.TrimSpace(result.String())
 }

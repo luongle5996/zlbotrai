@@ -163,6 +163,27 @@ func main() {
 		}
 		fmt.Printf("🚀 Đang sử dụng 'bộ não' Google AI (%d keys)\n", len(geminiKeys))
 		ai = NewGeminiService(geminiKeys, botInstruction, profile, searchSvc)
+	} else if provider == "openrouter" {
+		openrouterKeysStr := os.Getenv("OPENROUTER_KEYS")
+		var openrouterKeys []string
+		if openrouterKeysStr != "" {
+			openrouterKeys = strings.Split(openrouterKeysStr, ",")
+		} else {
+			oldKey := os.Getenv("OPENROUTER_KEY")
+			if oldKey != "" {
+				openrouterKeys = []string{oldKey}
+			} else {
+				log.Fatal("LỖI: Thiếu biến môi trường OPENROUTER_KEYS")
+			}
+		}
+
+		openrouterModel := strings.TrimSpace(os.Getenv("OPENROUTER_MODEL"))
+		if openrouterModel == "" {
+			openrouterModel = "qwen/qwen-3-next-80b:free"
+		}
+
+		fmt.Printf("🚀 Đang sử dụng 'bộ não' OpenRouter (%s)\n", openrouterModel)
+		ai = NewOpenAICompatibleService("OpenRouter", "https://openrouter.ai/api/v1", openrouterModel, openrouterKeys, botInstruction, profile, searchSvc)
 	} else if provider == "freemodel" {
 		freeModelKeysStr := os.Getenv("FREEMODEL_KEYS")
 		var freeModelKeys []string
@@ -196,7 +217,7 @@ func main() {
 		} else {
 			oldKey := os.Getenv("FREEMODEL_CC_KEY")
 			if oldKey == "" {
-				oldKey = os.Getenv("FREEMODEL_KEY")
+				oldKey = os.Getenv("FREEMEL_KEY")
 			}
 			if oldKey != "" {
 				freeModelKeys = []string{oldKey}
@@ -240,7 +261,7 @@ func main() {
 	maxHistory := 10 // Mặc định cho Groq
 	if provider == "gemini" {
 		maxHistory = 100 // Gemma/Gemini có token không giới hạn
-	} else if provider == "freemodel" {
+	} else if provider == "freemodel" || provider == "openrouter" {
 		maxHistory = 50
 	} else if provider == "freemodel_cc" || provider == "freemodel_claude" {
 		maxHistory = 50
@@ -454,7 +475,7 @@ type ZSticker struct {
 	Cate int
 }
 
-// Thư viện sticker động phân loại theo cảm xúc (Thỏ Hài Nhạt, Bư Mặt Ngáo & Moca Chó Điên)
+// Thư viện sticker động phân loại theo cảm xúc (Thỏ Hài Nhạt, Bư Mặt Ngáo, Moca Chó Điên & Zookiz Du Xuân)
 var emotionStickers = map[string][]ZSticker{
 	"haha": {
 		{ID: 98970, Cate: 12685}, {ID: 98978, Cate: 12685}, {ID: 98979, Cate: 12685}, {ID: 98982, Cate: 12685},
@@ -462,16 +483,19 @@ var emotionStickers = map[string][]ZSticker{
 		{ID: 50624, Cate: 12658}, {ID: 50631, Cate: 12658},
 		{ID: 45897, Cate: 11938}, {ID: 45903, Cate: 11938}, {ID: 45904, Cate: 11938}, {ID: 45909, Cate: 11938},
 		{ID: 45910, Cate: 11938},
+		{ID: 44535, Cate: 11852}, {ID: 44537, Cate: 11852}, {ID: 44543, Cate: 11852},
 	},
 	"like": {
 		{ID: 98974, Cate: 12685}, {ID: 98976, Cate: 12685}, {ID: 98977, Cate: 12685},
 		{ID: 50620, Cate: 12658},
 		{ID: 45901, Cate: 11938}, {ID: 45906, Cate: 11938}, {ID: 45911, Cate: 11938},
+		{ID: 44533, Cate: 11852}, {ID: 44534, Cate: 11852}, {ID: 44539, Cate: 11852},
 	},
 	"love": {
 		{ID: 98971, Cate: 12685}, {ID: 98983, Cate: 12685}, {ID: 98984, Cate: 12685},
 		{ID: 50616, Cate: 12658}, {ID: 50625, Cate: 12658}, {ID: 50629, Cate: 12658}, {ID: 50632, Cate: 12658},
 		{ID: 45899, Cate: 11938}, {ID: 45900, Cate: 11938}, {ID: 45908, Cate: 11938},
+		{ID: 44536, Cate: 11852}, {ID: 44540, Cate: 11852},
 	},
 	"sad": {
 		{ID: 98972, Cate: 12685}, {ID: 98980, Cate: 12685},
@@ -479,11 +503,13 @@ var emotionStickers = map[string][]ZSticker{
 		{ID: 50630, Cate: 12658},
 		{ID: 45905, Cate: 11938}, {ID: 45907, Cate: 11938}, {ID: 45913, Cate: 11938}, {ID: 45914, Cate: 11938},
 		{ID: 45915, Cate: 11938},
+		{ID: 44538, Cate: 11852}, {ID: 44541, Cate: 11852}, {ID: 44542, Cate: 11852},
 	},
 	"angry": {
 		{ID: 98973, Cate: 12685},
 		{ID: 50618, Cate: 12658}, {ID: 50626, Cate: 12658},
 		{ID: 45898, Cate: 11938}, {ID: 45902, Cate: 11938}, {ID: 45912, Cate: 11938},
+		{ID: 44544, Cate: 11852},
 	},
 	"wow": {
 		{ID: 98975, Cate: 12685}, {ID: 98981, Cate: 12685}, {ID: 98985, Cate: 12685},
