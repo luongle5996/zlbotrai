@@ -432,28 +432,7 @@ startListening:
 
 			// Gửi sticker ngẫu nhiên với tỷ lệ 30% dựa trên cảm xúc của tin nhắn
 			if aiReaction != "" && rand.Intn(100) < 30 {
-				var stickerID, cateID, stickerType int
-				switch strings.ToLower(aiReaction) {
-				case "haha":
-					stickerID, cateID, stickerType = 52627, 4429, 1
-				case "like":
-					stickerID, cateID, stickerType = 52631, 4429, 1
-				case "love":
-					stickerID, cateID, stickerType = 52624, 4429, 1
-				case "sad":
-					stickerID, cateID, stickerType = 52622, 4429, 1
-				case "angry":
-					stickerID, cateID, stickerType = 52625, 4429, 1
-				case "wow":
-					stickerID, cateID, stickerType = 52629, 4429, 1
-				}
-
-				if stickerID != 0 {
-					// Chờ 1 giây trước khi gửi sticker để hội thoại tự nhiên hơn
-					time.Sleep(1 * time.Second)
-					fmt.Printf("✨ Vy gửi kèm sticker động: %s (ID: %d)\n", aiReaction, stickerID)
-					_, _ = client.SendSticker(stickerType, stickerID, cateID, threadID, threadType, 0)
-				}
+				sendStickerFromLibrary(client, aiReaction, threadID, threadType)
 			}
 		},
 		Error: func(err error, ts int64) {
@@ -468,4 +447,62 @@ startListening:
 		log.Fatalf("Lỗi khi lắng nghe: %v", err)
 	}
 	select {}
+}
+
+type ZSticker struct {
+	ID   int
+	Cate int
+}
+
+// Thư viện sticker động phân loại theo cảm xúc (Thỏ Hài Nhạt, Bư Mặt Ngáo & Moca Chó Điên)
+var emotionStickers = map[string][]ZSticker{
+	"haha": {
+		{ID: 98970, Cate: 12685}, {ID: 98978, Cate: 12685}, {ID: 98979, Cate: 12685}, {ID: 98982, Cate: 12685},
+		{ID: 50615, Cate: 12658}, {ID: 50617, Cate: 12658}, {ID: 50622, Cate: 12658}, {ID: 50623, Cate: 12658},
+		{ID: 50624, Cate: 12658}, {ID: 50631, Cate: 12658},
+		{ID: 45897, Cate: 11938}, {ID: 45903, Cate: 11938}, {ID: 45904, Cate: 11938}, {ID: 45909, Cate: 11938},
+		{ID: 45910, Cate: 11938},
+	},
+	"like": {
+		{ID: 98974, Cate: 12685}, {ID: 98976, Cate: 12685}, {ID: 98977, Cate: 12685},
+		{ID: 50620, Cate: 12658},
+		{ID: 45901, Cate: 11938}, {ID: 45906, Cate: 11938}, {ID: 45911, Cate: 11938},
+	},
+	"love": {
+		{ID: 98971, Cate: 12685}, {ID: 98983, Cate: 12685}, {ID: 98984, Cate: 12685},
+		{ID: 50616, Cate: 12658}, {ID: 50625, Cate: 12658}, {ID: 50629, Cate: 12658}, {ID: 50632, Cate: 12658},
+		{ID: 45899, Cate: 11938}, {ID: 45900, Cate: 11938}, {ID: 45908, Cate: 11938},
+	},
+	"sad": {
+		{ID: 98972, Cate: 12685}, {ID: 98980, Cate: 12685},
+		{ID: 50614, Cate: 12658}, {ID: 50619, Cate: 12658}, {ID: 50621, Cate: 12658}, {ID: 50627, Cate: 12658},
+		{ID: 50630, Cate: 12658},
+		{ID: 45905, Cate: 11938}, {ID: 45907, Cate: 11938}, {ID: 45913, Cate: 11938}, {ID: 45914, Cate: 11938},
+		{ID: 45915, Cate: 11938},
+	},
+	"angry": {
+		{ID: 98973, Cate: 12685},
+		{ID: 50618, Cate: 12658}, {ID: 50626, Cate: 12658},
+		{ID: 45898, Cate: 11938}, {ID: 45902, Cate: 11938}, {ID: 45912, Cate: 11938},
+	},
+	"wow": {
+		{ID: 98975, Cate: 12685}, {ID: 98981, Cate: 12685}, {ID: 98985, Cate: 12685},
+		{ID: 50628, Cate: 12658}, {ID: 50633, Cate: 12658},
+		{ID: 45916, Cate: 11938},
+	},
+}
+
+func sendStickerFromLibrary(client *zago.ZaloAPI, reaction string, threadID string, threadType zago.ThreadType) {
+	list, ok := emotionStickers[strings.ToLower(reaction)]
+	if !ok || len(list) == 0 {
+		return
+	}
+
+	// Chọn ngẫu nhiên 1 sticker trong danh sách cảm xúc tương ứng
+	stk := list[rand.Intn(len(list))]
+	
+	// Chờ 1 giây trước khi gửi để hội thoại tự nhiên
+	time.Sleep(1 * time.Second)
+	fmt.Printf("✨ Vy gửi kèm sticker động: %s (ID: %d, Cate: %d)\n", reaction, stk.ID, stk.Cate)
+	_, _ = client.SendSticker(1, stk.ID, stk.Cate, threadID, threadType, 0)
 }
