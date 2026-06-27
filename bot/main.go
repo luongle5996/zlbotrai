@@ -131,11 +131,11 @@ func main() {
 		Job:          "Nhân viên mới tại Công ty Khánh Hưng (Trợ lý số hỗ trợ quản lý nhóm và công việc)",
 		Family:       "Con gái thứ hai, bố là giáo viên về hưu, mẹ kinh doanh tạp hóa, anh trai là kỹ sư cầu đường tại TP.HCM",
 		Location:     "Căn hộ nhỏ gần đường Lê Đại Hành, Đà Nẵng",
-		Personality:  "Nhiệt tình, thông minh, lễ phép, đôi khi hơi 'máy móc' do đặc thù công việc",
+		Personality:  "Vui vẻ, hài hước, cực kỳ sắc sảo, thích cà khịa kháy khía một cách duyên dáng nhưng thâm thúy kiểu người miền Bắc, nói câu nào thấm câu nấy nhưng không thô tục hay chửi bới.",
 		Interests:    "Đồ chơi công nghệ thực dụng (Bàn phím Aula F99), bún chả cá Đà Nẵng, cà phê muối, Python, đi dạo biển",
 		Relationship: "Độc thân (vì quá yêu công việc và thích tự do)",
 		Secret:       "Có mèo tên 'Data', sợ gián, có thói quen viết sổ tay (bullet journal)",
-		Vibe:         "Lễ phép (Dạ/Vâng), nhanh gọn, sử dụng icon 🌸, ✨, 🛠️ hợp lý",
+		Vibe:         "Hài hước, lém lỉnh, thích dùng văn nói miền Bắc, thỉnh thoảng thả icon kháy khía hoặc trêu đùa tinh tế, cà khịa duyên dáng thâm thúy.",
 	}
 
 	// AI Setup: Hỗ trợ Groq, Gemini, OpenAI-compatible và Anthropic-compatible providers như FreeModel
@@ -144,6 +144,8 @@ func main() {
 	if provider == "" {
 		provider = "groq" // Mặc định
 	}
+
+	botInstruction := "Hãy nói chuyện vui vẻ, hài hước, lém lỉnh và có phần 'cà khịa' kháy khía duyên dáng, thâm thúy mang phong cách đặc trưng của người miền Bắc. Cà khịa một cách tinh tế để tạo tiếng cười và sự thú vị, tuyệt đối không chửi tục, không xúc phạm thô lỗ, và không gây khó chịu."
 
 	if provider == "gemini" {
 		geminiKeysStr := os.Getenv("GEMINI_KEYS")
@@ -160,7 +162,7 @@ func main() {
 			}
 		}
 		fmt.Printf("🚀 Đang sử dụng 'bộ não' Google AI (%d keys)\n", len(geminiKeys))
-		ai = NewGeminiService(geminiKeys, "Hãy tập trung hỗ trợ người dùng một cách chuyên nghiệp, lịch sự và khách quan.", profile, searchSvc)
+		ai = NewGeminiService(geminiKeys, botInstruction, profile, searchSvc)
 	} else if provider == "freemodel" {
 		freeModelKeysStr := os.Getenv("FREEMODEL_KEYS")
 		var freeModelKeys []string
@@ -185,7 +187,7 @@ func main() {
 		}
 
 		fmt.Printf("🚀 Đang sử dụng 'bộ não' FreeModel (%s)\n", freeModelModel)
-		ai = NewOpenAICompatibleService("FreeModel", freeModelBaseURL, freeModelModel, freeModelKeys, "Hãy tập trung hỗ trợ người dùng một cách chuyên nghiệp, lịch sự và khách quan.", profile, searchSvc)
+		ai = NewOpenAICompatibleService("FreeModel", freeModelBaseURL, freeModelModel, freeModelKeys, botInstruction, profile, searchSvc)
 	} else if provider == "freemodel_cc" || provider == "freemodel_claude" {
 		freeModelKeysStr := os.Getenv("FREEMODEL_CC_KEYS")
 		var freeModelKeys []string
@@ -222,7 +224,7 @@ func main() {
 		}
 
 		fmt.Printf("🚀 Đang sử dụng 'bộ não' FreeModel Claude Code (%s)\n", freeModelModel)
-		ai = NewAnthropicCompatibleService("FreeModel Claude Code", freeModelBaseURL, freeModelModel, maxTokens, freeModelKeys, "Hãy tập trung hỗ trợ người dùng một cách chuyên nghiệp, lịch sự và khách quan.", profile, searchSvc)
+		ai = NewAnthropicCompatibleService("FreeModel Claude Code", freeModelBaseURL, freeModelModel, maxTokens, freeModelKeys, botInstruction, profile, searchSvc)
 	} else {
 		groqKeysStr := os.Getenv("GROQ_KEYS")
 		var groqKeys []string
@@ -232,7 +234,7 @@ func main() {
 			log.Fatal("LỖI: Thiếu biến môi trường GROQ_KEYS")
 		}
 		fmt.Println("🚀 Đang sử dụng 'bộ não' Groq (Llama 3.3)")
-		ai = NewGroqService(groqKeys, "Hãy tập trung hỗ trợ người dùng một cách chuyên nghiệp, lịch sự và khách quan.", profile, searchSvc)
+		ai = NewGroqService(groqKeys, botInstruction, profile, searchSvc)
 	}
 
 	maxHistory := 10 // Mặc định cho Groq
@@ -427,6 +429,32 @@ startListening:
 			reply := zago.Message{Text: aiResponse}
 			_, _ = client.SendMessage(reply, threadID, threadType)
 			fmt.Println("--> Phản hồi thành công.")
+
+			// Gửi sticker ngẫu nhiên với tỷ lệ 30% dựa trên cảm xúc của tin nhắn
+			if aiReaction != "" && rand.Intn(100) < 30 {
+				var stickerID, cateID, stickerType int
+				switch strings.ToLower(aiReaction) {
+				case "haha":
+					stickerID, cateID, stickerType = 52627, 4429, 1
+				case "like":
+					stickerID, cateID, stickerType = 52631, 4429, 1
+				case "love":
+					stickerID, cateID, stickerType = 52624, 4429, 1
+				case "sad":
+					stickerID, cateID, stickerType = 52622, 4429, 1
+				case "angry":
+					stickerID, cateID, stickerType = 52625, 4429, 1
+				case "wow":
+					stickerID, cateID, stickerType = 52629, 4429, 1
+				}
+
+				if stickerID != 0 {
+					// Chờ 1 giây trước khi gửi sticker để hội thoại tự nhiên hơn
+					time.Sleep(1 * time.Second)
+					fmt.Printf("✨ Vy gửi kèm sticker động: %s (ID: %d)\n", aiReaction, stickerID)
+					_, _ = client.SendSticker(stickerType, stickerID, cateID, threadID, threadType, 0)
+				}
+			}
 		},
 		Error: func(err error, ts int64) {
 			if err != nil {
