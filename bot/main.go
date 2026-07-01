@@ -443,11 +443,15 @@ startListening:
 				aiResponse = "Xin lỗi, tôi gặp chút trục trặc khi kết nối với bộ não AI."
 				aiReaction = "sad"
 			}
+			aiReaction = normalizeAIReaction(aiReaction, aiResponse)
 
 			// Thực hiện thả cảm xúc nếu AI yêu cầu
 			if aiReaction != "" {
-				fmt.Printf("🎭 Vy đang thả cảm xúc: %s\n", aiReaction)
-				_, _ = client.SendReaction(data, aiReaction, threadID, threadType, 1)
+				reactionIcon := reactionIconForLabel(aiReaction)
+				fmt.Printf("🎭 Vy đang thả cảm xúc: %s (%s)\n", aiReaction, reactionIcon)
+				if _, err := client.SendReaction(data, reactionIcon, threadID, threadType, 1); err != nil {
+					log.Printf("⚠️ Lỗi thả reaction %q: %v", reactionIcon, err)
+				}
 			}
 
 			historyMu.Lock()
@@ -478,8 +482,8 @@ startListening:
 			_, _ = client.SendMessage(reply, threadID, threadType)
 			fmt.Println("--> Phản hồi thành công.")
 
-			// Gửi sticker ngẫu nhiên với tỷ lệ 30% dựa trên cảm xúc của tin nhắn
-			if aiReaction != "" && rand.Intn(100) < 30 {
+			// Gửi sticker ngẫu nhiên với tỷ lệ 70% dựa trên cảm xúc của tin nhắn
+			if aiReaction != "" && rand.Intn(100) < 70 {
 				sendStickerFromLibrary(client, aiReaction, threadID, threadType)
 			}
 		},
@@ -500,6 +504,56 @@ startListening:
 type ZSticker struct {
 	ID   int
 	Cate int
+}
+
+func normalizeAIReaction(reaction, text string) string {
+	r := strings.ToLower(strings.TrimSpace(reaction))
+	r = strings.Trim(r, `"'.,:;!? `)
+	switch r {
+	case "like", "👍", "👍🏻", "👍🏼", "ok", "okay":
+		return "like"
+	case "love", "❤️", "❤", "😍", "🥰":
+		return "love"
+	case "haha", "laugh", "laughing", "😂", "🤣", "😄", "😁", "😊":
+		return "haha"
+	case "wow", "surprised", "😮", "😯", "😲", "🤯":
+		return "wow"
+	case "sad", "cry", "crying", "😢", "😭", "☹️", "🙁":
+		return "sad"
+	case "angry", "mad", "😡", "😠":
+		return "angry"
+	}
+
+	lowerText := strings.ToLower(text)
+	switch {
+	case strings.Contains(lowerText, "xin lỗi") || strings.Contains(lowerText, "trục trặc") || strings.Contains(lowerText, "lỗi"):
+		return "sad"
+	case strings.Contains(lowerText, "haha") || strings.Contains(lowerText, "hihi") || strings.Contains(lowerText, "vui") || strings.Contains(lowerText, "cười"):
+		return "haha"
+	case strings.Contains(lowerText, "yêu") || strings.Contains(lowerText, "thương") || strings.Contains(lowerText, "xịn"):
+		return "love"
+	case strings.Contains(lowerText, "ồ") || strings.Contains(lowerText, "wow") || strings.Contains(lowerText, "bất ngờ"):
+		return "wow"
+	default:
+		return "like"
+	}
+}
+
+func reactionIconForLabel(reaction string) string {
+	switch normalizeAIReaction(reaction, "") {
+	case "love":
+		return "❤️"
+	case "haha":
+		return "😂"
+	case "wow":
+		return "😮"
+	case "sad":
+		return "😢"
+	case "angry":
+		return "😡"
+	default:
+		return "👍"
+	}
 }
 
 // Thư viện sticker động phân loại theo cảm xúc (Thỏ Hài Nhạt, Bư Mặt Ngáo, Moca Chó Điên & Zookiz Du Xuân)
@@ -557,5 +611,7 @@ func sendStickerFromLibrary(client *zago.ZaloAPI, reaction string, threadID stri
 	// Chờ 1 giây trước khi gửi để hội thoại tự nhiên
 	time.Sleep(1 * time.Second)
 	fmt.Printf("✨ Vy gửi kèm sticker động: %s (ID: %d, Cate: %d)\n", reaction, stk.ID, stk.Cate)
-	_, _ = client.SendSticker(1, stk.ID, stk.Cate, threadID, threadType, 0)
+	if _, err := client.SendSticker(1, stk.ID, stk.Cate, threadID, threadType, 0); err != nil {
+		log.Printf("⚠️ Lỗi gửi sticker %s (ID: %d, Cate: %d): %v", reaction, stk.ID, stk.Cate, err)
+	}
 }
