@@ -441,6 +441,7 @@ startListening:
 			if err != nil {
 				log.Printf("⚠️ Lỗi AI provider %q: %v", provider, err)
 				aiResponse = "Xin lỗi, tôi gặp chút trục trặc khi kết nối với bộ não AI."
+				aiReaction = "sad"
 			}
 
 			// Thực hiện thả cảm xúc nếu AI yêu cầu

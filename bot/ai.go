@@ -35,14 +35,9 @@ type AIResponse struct {
 }
 
 type GroqRequest struct {
-	Model          string          `json:"model"`
-	Messages       []AIMessage     `json:"messages"`
-	Temperature    float64         `json:"temperature,omitempty"`
-	ResponseFormat *ResponseFormat `json:"response_format,omitempty"`
-}
-
-type ResponseFormat struct {
-	Type string `json:"type"`
+	Model       string      `json:"model"`
+	Messages    []AIMessage `json:"messages"`
+	Temperature float64     `json:"temperature,omitempty"`
 }
 
 type GroqResponse struct {
@@ -148,9 +143,6 @@ func (s *OpenAICompatibleService) callAPI(messages []AIMessage) (string, error) 
 			Model:       s.Model,
 			Messages:    messages,
 			Temperature: 0.7,
-			ResponseFormat: &ResponseFormat{
-				Type: "json_object",
-			},
 		}
 		jsonData, _ := json.Marshal(reqBody)
 
