@@ -209,6 +209,31 @@ func main() {
 
 		fmt.Printf("🚀 Đang sử dụng 'bộ não' FreeModel (%s)\n", freeModelModel)
 		ai = NewOpenAICompatibleService("FreeModel", freeModelBaseURL, freeModelModel, freeModelKeys, botInstruction, profile, searchSvc)
+	} else if provider == "conduit" {
+		conduitKeysStr := os.Getenv("CONDUIT_KEYS")
+		var conduitKeys []string
+		if conduitKeysStr != "" {
+			conduitKeys = strings.Split(conduitKeysStr, ",")
+		} else {
+			oldKey := os.Getenv("CONDUIT_KEY")
+			if oldKey != "" {
+				conduitKeys = []string{oldKey}
+			} else {
+				log.Fatal("LỖI: Thiếu biến môi trường CONDUIT_KEYS")
+			}
+		}
+
+		conduitBaseURL := strings.TrimSpace(os.Getenv("CONDUIT_BASE_URL"))
+		if conduitBaseURL == "" {
+			conduitBaseURL = "https://conduit.ozdoev.net/api/v1"
+		}
+		conduitModel := strings.TrimSpace(os.Getenv("CONDUIT_MODEL"))
+		if conduitModel == "" {
+			conduitModel = "claude-opus-4.8"
+		}
+
+		fmt.Printf("🚀 Đang sử dụng 'bộ não' Conduit (%s)\n", conduitModel)
+		ai = NewOpenAICompatibleService("Conduit", conduitBaseURL, conduitModel, conduitKeys, botInstruction, profile, searchSvc)
 	} else if provider == "freemodel_cc" || provider == "freemodel_claude" {
 		freeModelKeysStr := os.Getenv("FREEMODEL_CC_KEYS")
 		var freeModelKeys []string
@@ -261,7 +286,7 @@ func main() {
 	maxHistory := 10 // Mặc định cho Groq
 	if provider == "gemini" {
 		maxHistory = 100 // Gemma/Gemini có token không giới hạn
-	} else if provider == "freemodel" || provider == "openrouter" {
+	} else if provider == "conduit" || provider == "freemodel" || provider == "openrouter" {
 		maxHistory = 50
 	} else if provider == "freemodel_cc" || provider == "freemodel_claude" {
 		maxHistory = 50
@@ -526,7 +551,7 @@ func sendStickerFromLibrary(client *zago.ZaloAPI, reaction string, threadID stri
 
 	// Chọn ngẫu nhiên 1 sticker trong danh sách cảm xúc tương ứng
 	stk := list[rand.Intn(len(list))]
-	
+
 	// Chờ 1 giây trước khi gửi để hội thoại tự nhiên
 	time.Sleep(1 * time.Second)
 	fmt.Printf("✨ Vy gửi kèm sticker động: %s (ID: %d, Cate: %d)\n", reaction, stk.ID, stk.Cate)
