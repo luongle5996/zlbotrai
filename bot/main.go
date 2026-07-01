@@ -229,7 +229,7 @@ func main() {
 		}
 		conduitModel := strings.TrimSpace(os.Getenv("CONDUIT_MODEL"))
 		if conduitModel == "" {
-			conduitModel = "claude-opus-4.8"
+			conduitModel = "claude-opus-4-8"
 		}
 
 		fmt.Printf("🚀 Đang sử dụng 'bộ não' Conduit (%s)\n", conduitModel)
@@ -439,6 +439,7 @@ startListening:
 			mustSearch := strings.Contains(strings.ToLower(message), "tra cứu")
 			aiResponse, aiReaction, err := ai.GetAIResponse(message, history, mustSearch, honorific)
 			if err != nil {
+				log.Printf("⚠️ Lỗi AI provider %q: %v", provider, err)
 				aiResponse = "Xin lỗi, tôi gặp chút trục trặc khi kết nối với bộ não AI."
 			}
 
