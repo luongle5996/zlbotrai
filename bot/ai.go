@@ -35,8 +35,14 @@ type AIResponse struct {
 }
 
 type GroqRequest struct {
-	Model    string      `json:"model"`
-	Messages []AIMessage `json:"messages"`
+	Model          string          `json:"model"`
+	Messages       []AIMessage     `json:"messages"`
+	Temperature    float64         `json:"temperature,omitempty"`
+	ResponseFormat *ResponseFormat `json:"response_format,omitempty"`
+}
+
+type ResponseFormat struct {
+	Type string `json:"type"`
 }
 
 type GroqResponse struct {
@@ -139,11 +145,16 @@ func (s *OpenAICompatibleService) callAPI(messages []AIMessage) (string, error) 
 		}
 
 		reqBody := GroqRequest{
-			Model:    s.Model,
-			Messages: messages,
+			Model:       s.Model,
+			Messages:    messages,
+			Temperature: 0.7,
+			ResponseFormat: &ResponseFormat{
+				Type: "json_object",
+			},
 		}
 		jsonData, _ := json.Marshal(reqBody)
 
+		fmt.Printf("🤖 [%s] Request model=%s base_url=%s\n", s.ProviderName, s.Model, s.BaseURL)
 		req, _ := http.NewRequest("POST", s.BaseURL+"/chat/completions", bytes.NewBuffer(jsonData))
 		req.Header.Set("Authorization", "Bearer "+apiKey)
 		req.Header.Set("Content-Type", "application/json")
@@ -192,7 +203,8 @@ func (s *OpenAICompatibleService) GetAIResponse(userPrompt string, history []AIM
 	if err != nil {
 		return "", "", err
 	}
-	return parseAIJSON(raw)
+	text, reaction, err := parseAIJSON(raw)
+	return enforcePersonaText(text, reaction, err, s.Profile, honorific), reaction, err
 }
 
 func NewAnthropicCompatibleService(providerName, baseURL, model string, maxTokens int, keys []string, systemPrompt string, profile BotProfile, searchSvc *SearchService) *AnthropicCompatibleService {
@@ -292,7 +304,8 @@ func (s *AnthropicCompatibleService) GetAIResponse(userPrompt string, history []
 	if err != nil {
 		return "", "", err
 	}
-	return parseAIJSON(raw)
+	text, reaction, err := parseAIJSON(raw)
+	return enforcePersonaText(text, reaction, err, s.Profile, honorific), reaction, err
 }
 
 // GroqService implementation
@@ -375,7 +388,8 @@ func (s *GroqService) GetAIResponse(userPrompt string, history []AIMessage, forc
 	if err != nil {
 		return "", "", err
 	}
-	return parseAIJSON(raw)
+	text, reaction, err := parseAIJSON(raw)
+	return enforcePersonaText(text, reaction, err, s.Profile, honorific), reaction, err
 }
 
 // GeminiService implementation
@@ -479,7 +493,8 @@ func (s *GeminiService) GetAIResponse(userPrompt string, history []AIMessage, fo
 				rawText += geminiResp.Candidates[0].Content.Parts[j].Text
 			}
 			fmt.Printf("🤖 [Gemma RAW] %s\n", rawText[:min(len(rawText), 200)])
-			return parseAIJSON(rawText)
+			text, reaction, err := parseAIJSON(rawText)
+			return enforcePersonaText(text, reaction, err, s.Profile, honorific), reaction, err
 		}
 
 		// Nếu candidates trống, có thể bị safety filter chặn
@@ -527,10 +542,12 @@ func buildFullPrompt(userPrompt string, p BotProfile, extra string, searchSvc *S
 
 [PHẦN 2: PHONG CÁCH GIAO TIẾP]:
 1. XƯNG HÔ: Luôn xưng "Vy" và gọi người dùng là "%s" (hoặc "mọi người").
-2. TÍNH CÁCH: Nhân viên mới Khánh Hưng, hăng hái, ham học hỏi, thấu cảm.
-3. QUY TRÌNH: Trả lời ngắn cho xã giao, chi tiết cho kỹ thuật.
-4. NGÔN NGỮ: CHỈ DÙNG TIẾNG VIỆT. TUYỆT ĐỐI KHÔNG DÙNG TIẾNG NƯỚC NGOÀI.
-5. ĐỊNH DẠNG BẮT BUỘC: CHỈ trả về DUY NHẤT một đoạn JSON hợp lệ, KHÔNG viết gì khác trước hoặc sau JSON.
+2. DANH TÍNH: Bạn chỉ là Lê Hạ Vy trong cuộc trò chuyện này. KHÔNG BAO GIỜ tự nhận là DeepSeek, ChatGPT, Claude, Gemini, OpenAI, Anthropic, Google, mô hình AI, trợ lý AI, hoặc công ty phát triển mô hình.
+3. KHI ĐƯỢC HỎI "BẠN LÀ AI": Trả lời theo hồ sơ Lê Hạ Vy, không nhắc tên model hay nhà cung cấp API.
+4. TÍNH CÁCH: Nhân viên mới Khánh Hưng, hăng hái, ham học hỏi, thấu cảm.
+5. QUY TRÌNH: Trả lời ngắn cho xã giao, chi tiết cho kỹ thuật.
+6. NGÔN NGỮ: CHỈ DÙNG TIẾNG VIỆT. TUYỆT ĐỐI KHÔNG DÙNG TIẾNG NƯỚC NGOÀI.
+7. ĐỊNH DẠNG BẮT BUỘC: CHỈ trả về DUY NHẤT một đoạn JSON hợp lệ, KHÔNG viết gì khác trước hoặc sau JSON.
    Cấu trúc: {"text": "nội dung trả lời", "reaction": "emoji"}
    Emoji hợp lệ: like, love, haha, wow, sad, angry
    KHÔNG ĐƯỢC viết suy luận, giải thích hay markdown. CHỈ JSON THUẦN TÚY.
@@ -591,6 +608,34 @@ func parseAIJSON(raw string) (string, string, error) {
 	}
 
 	return raw, "", nil
+}
+
+func enforcePersonaText(text, reaction string, parseErr error, profile BotProfile, honorific string) string {
+	if parseErr != nil {
+		return text
+	}
+	lower := strings.ToLower(text)
+	blockedIdentities := []string{
+		"deepseek",
+		"chatgpt",
+		"claude",
+		"gemini",
+		"openai",
+		"anthropic",
+		"google ai",
+		"trợ lý ai",
+		"mô hình ai",
+		"model ai",
+	}
+	for _, identity := range blockedIdentities {
+		if strings.Contains(lower, identity) {
+			if honorific == "" {
+				honorific = "anh/chị"
+			}
+			return fmt.Sprintf("Chào %s, Vy đây. Có gì cần Vy hỗ trợ không?", honorific)
+		}
+	}
+	return text
 }
 
 // extractJSONField trích xuất giá trị trường trong chuỗi JSON thủ công kể cả khi JSON bị lỗi nháy kép lồng nhau
