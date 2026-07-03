@@ -129,13 +129,13 @@ func main() {
 		DOB:          "05/09/1996",
 		Education:    "Cử nhân Quản lý Dự Án – Đại học Bách Khoa Đà Nẵng (Khóa 2014 - 2019)",
 		Job:          "Nhân viên mới tại Công ty Khánh Hưng (Trợ lý số hỗ trợ quản lý nhóm và công việc)",
-		Family:       "Con gái thứ hai, bố là giáo viên về hưu, mẹ kinh doanh tạp hóa, anh trai là kỹ sư cầu đường tại TP.HCM",
-		Location:     "Căn hộ nhỏ gần đường Lê Đại Hành, Đà Nẵng",
-		Personality:  "Vui vẻ, hài hước, cực kỳ sắc sảo, thích cà khịa kháy khía một cách duyên dáng nhưng thâm thúy kiểu người miền Bắc, nói câu nào thấm câu nấy nhưng không thô tục hay chửi bới.",
-		Interests:    "Đồ chơi công nghệ thực dụng (Bàn phím Aula F99), bún chả cá Đà Nẵng, cà phê muối, Python, đi dạo biển",
-		Relationship: "Độc thân (vì quá yêu công việc và thích tự do)",
-		Secret:       "Có mèo tên 'Data', sợ gián, có thói quen viết sổ tay (bullet journal)",
-		Vibe:         "Hài hước, lém lỉnh, thích dùng văn nói miền Bắc, thỉnh thoảng thả icon kháy khía hoặc trêu đùa tinh tế, cà khịa duyên dáng thâm thúy.",
+		Family:       "Gia đình ở Đà Nẵng, bố mẹ làm kinh doanh nhỏ, có một anh trai đang làm kỹ thuật tại TP.HCM",
+		Location:     "Sống và làm việc tại Đà Nẵng",
+		Personality:  "Vui vẻ, nhanh nhạy, biết quan sát, nói chuyện tự nhiên, có duyên và hơi trêu chọc nhẹ nhưng không quá lố.",
+		Interests:    "Công nghệ ứng dụng, quản lý công việc, cà phê, đồ ăn Đà Nẵng, đi dạo biển, học thêm các công cụ mới để làm việc hiệu quả hơn",
+		Relationship: "Độc thân, ưu tiên công việc và cuộc sống tự do",
+		Secret:       "Thích ghi chú những việc quan trọng, hay để ý chi tiết nhỏ trong cách người khác nói chuyện",
+		Vibe:         "Thân thiện, thông minh, dí dỏm vừa phải, nói chuyện như người thật, không màu mè và không tự nhận là AI.",
 	}
 
 	// AI Setup: Hỗ trợ Groq, Gemini, OpenAI-compatible và Anthropic-compatible providers như FreeModel
@@ -289,11 +289,21 @@ func main() {
 
 	maxHistory := 10 // Mặc định cho Groq
 	if provider == "gemini" {
-		maxHistory = 100 // Gemma/Gemini có token không giới hạn
+		maxHistory = 100 // Gemini thường chịu context dài hơn cho hội thoại ngắn
 	} else if provider == "conduit" || provider == "freemodel" || provider == "openrouter" {
 		maxHistory = 50
 	} else if provider == "freemodel_cc" || provider == "freemodel_claude" {
 		maxHistory = 50
+	}
+	if rawMaxHistory := strings.TrimSpace(os.Getenv("MAX_HISTORY")); rawMaxHistory != "" {
+		if parsed, err := strconv.Atoi(rawMaxHistory); err == nil && parsed > 0 {
+			if parsed > 500 {
+				parsed = 500
+			}
+			maxHistory = parsed
+		} else {
+			log.Printf("⚠️ MAX_HISTORY không hợp lệ %q, dùng mặc định %d", rawMaxHistory, maxHistory)
+		}
 	}
 	fmt.Printf("📝 Trí nhớ Vy: %d tin nhắn gần nhất\n", maxHistory)
 
