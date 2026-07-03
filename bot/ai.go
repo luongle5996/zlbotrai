@@ -311,11 +311,15 @@ type GroqService struct {
 	SearchService *SearchService
 }
 
-func NewGroqService(keys []string, systemPrompt string, profile BotProfile, searchSvc *SearchService) *GroqService {
+func NewGroqService(keys []string, model string, systemPrompt string, profile BotProfile, searchSvc *SearchService) *GroqService {
+	model = strings.TrimSpace(model)
+	if model == "" {
+		model = "openai/gpt-oss-120b"
+	}
 	return &GroqService{
 		Keys:          keys,
 		CurrentIndex:  0,
-		Model:         "llama-3.3-70b-versatile",
+		Model:         model,
 		SystemPrompt:  systemPrompt,
 		Profile:       profile,
 		SearchService: searchSvc,

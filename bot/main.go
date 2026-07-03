@@ -279,8 +279,12 @@ func main() {
 		} else {
 			log.Fatal("LỖI: Thiếu biến môi trường GROQ_KEYS")
 		}
-		fmt.Println("🚀 Đang sử dụng 'bộ não' Groq (Llama 3.3)")
-		ai = NewGroqService(groqKeys, botInstruction, profile, searchSvc)
+		groqModel := strings.TrimSpace(os.Getenv("GROQ_MODEL"))
+		if groqModel == "" {
+			groqModel = "openai/gpt-oss-120b"
+		}
+		fmt.Printf("🚀 Đang sử dụng 'bộ não' Groq (%s)\n", groqModel)
+		ai = NewGroqService(groqKeys, groqModel, botInstruction, profile, searchSvc)
 	}
 
 	maxHistory := 10 // Mặc định cho Groq
