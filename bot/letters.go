@@ -68,6 +68,9 @@ func (s *LetterService) HandleMessage(message string) (string, bool) {
 	}
 
 	query := normalizeVietnamese(strings.ToLower(strings.TrimSpace(message)))
+	if !strings.Contains(query, "tracuu") && !strings.Contains(query, "tra cuu") {
+		return "", false
+	}
 	if !strings.Contains(query, "thu") && !strings.Contains(query, "hop dong") {
 		return "", false
 	}
@@ -98,6 +101,8 @@ func (s *LetterService) HandleMessage(message string) (string, bool) {
 func isDueListQuery(query string) bool {
 	return strings.Contains(query, "gan het han") ||
 		strings.Contains(query, "sap het han") ||
+		strings.Contains(query, "thu nao") ||
+		strings.Contains(query, "nhung thu") ||
 		strings.Contains(query, "con han bao nhieu") ||
 		strings.Contains(query, "het han")
 }
@@ -354,9 +359,13 @@ func extractLookupKeyword(query string) string {
 		"hop dong", "",
 		"kiem tra", "",
 		"tra cuu", "",
+		"tracuu", "",
 		"tim", "",
 		"giup", "",
 		"xem", "",
+		"thu nao", "",
+		"nhung thu", "",
+		"nao", "",
 		"gan het han", "",
 		"sap het han", "",
 		"con han bao nhieu", "",

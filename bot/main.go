@@ -455,7 +455,7 @@ startListening:
 				return
 			}
 
-			fmt.Printf("[%s] Nhận tin nhắn từ %s: %s\n", time.Now().Format("15:04:05"), userID, message)
+			fmt.Printf("[%s] Nhận tin nhắn từ %s (threadID=%s, threadType=%v): %s\n", time.Now().Format("15:04:05"), userID, threadID, threadType, message)
 			client.SetTyping(threadID, threadType)
 
 			if letterResponse, handled := letterSvc.HandleMessage(cleanMsg); handled {
