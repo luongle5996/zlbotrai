@@ -68,9 +68,15 @@ func (s *LetterService) HandleMessage(message string) (string, bool) {
 	}
 
 	query := normalizeVietnamese(strings.ToLower(strings.TrimSpace(message)))
-	if !strings.Contains(query, "tracuu") && !strings.Contains(query, "tra cuu") {
+	lookupAt := strings.Index(query, "tracuu")
+	if lookupAt < 0 {
+		lookupAt = strings.Index(query, "tra cuu")
+	}
+	if lookupAt < 0 {
 		return "", false
 	}
+	// Zalo may leave the full @mention in the message; it is not part of the lookup.
+	query = strings.TrimSpace(query[lookupAt:])
 	if !strings.Contains(query, "thu") && !strings.Contains(query, "hop dong") {
 		return "", false
 	}
