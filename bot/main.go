@@ -307,6 +307,20 @@ func main() {
 	}
 	fmt.Printf("📝 Trí nhớ Vy: %d tin nhắn gần nhất\n", maxHistory)
 
+	loc, err := time.LoadLocation("Asia/Ho_Chi_Minh")
+	if err != nil {
+		loc = time.Local
+	}
+	letterSvc := NewLetterServiceFromEnv(loc)
+	if letterSvc.Enabled() {
+		fmt.Printf("📄 Đã bật theo dõi thư hợp đồng từ Google Sheet, nhắc trước %d ngày\n", letterSvc.AlertDays)
+		if letterSvc.AutoAlertEnabled() {
+			fmt.Printf("🔔 Nhắc hạn thư hằng ngày lúc %s vào nhóm %s\n", letterSvc.AlertTime, letterSvc.AlertGroupID)
+		} else {
+			fmt.Println("ℹ️ Chưa cấu hình LETTER_ALERT_GROUP_ID nên chỉ bật hỏi đáp thư, chưa tự gửi nhắc hạn.")
+		}
+	}
+
 	chatHistory := make(map[string][]AIMessage)
 	historyMu := sync.Mutex{}
 
@@ -416,6 +430,7 @@ func main() {
 
 startListening:
 	fmt.Printf("🎉 Bot đang hoạt động với tên: %s\n", client.AccountName())
+	letterSvc.StartDailyAlert(client)
 
 	client.SetSocketCallbacks(zago.SocketCallbacks{
 		Message: func(mid, userID, message string, data *worker.MessageObject, threadID string, threadType zago.ThreadType) {
@@ -442,6 +457,13 @@ startListening:
 
 			fmt.Printf("[%s] Nhận tin nhắn từ %s: %s\n", time.Now().Format("15:04:05"), userID, message)
 			client.SetTyping(threadID, threadType)
+
+			if letterResponse, handled := letterSvc.HandleMessage(cleanMsg); handled {
+				reply := zago.Message{Text: letterResponse}
+				_, _ = client.SendMessage(reply, threadID, threadType)
+				fmt.Println("--> Phản hồi thông tin thư hợp đồng thành công.")
+				return
+			}
 
 			// Lấy danh xưng (Anh/Chị) của người gửi
 			honorific := getHonorific(client, userID)
