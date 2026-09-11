@@ -163,6 +163,33 @@ func main() {
 		}
 		fmt.Printf("🚀 Đang sử dụng 'bộ não' Google AI (%d keys)\n", len(geminiKeys))
 		ai = NewGeminiService(geminiKeys, botInstruction, profile, searchSvc)
+	} else if provider == "kiraai" {
+		// KiraAI uses the OpenAI-compatible chat completions API.
+		var kiraKeys []string
+		for _, key := range strings.Split(os.Getenv("KIRAAI_KEYS"), ",") {
+			if key = strings.TrimSpace(key); key != "" {
+				kiraKeys = append(kiraKeys, key)
+			}
+		}
+		if len(kiraKeys) == 0 {
+			if key := strings.TrimSpace(os.Getenv("KIRAAI_KEY")); key != "" {
+				kiraKeys = []string{key}
+			} else {
+				log.Fatal("LỖI: Thiếu biến môi trường KIRAAI_KEY hoặc KIRAAI_KEYS")
+			}
+		}
+
+		kiraBaseURL := strings.TrimSpace(os.Getenv("KIRAAI_BASE_URL"))
+		if kiraBaseURL == "" {
+			kiraBaseURL = "https://kiraai.vn/api/v1"
+		}
+		kiraModel := strings.TrimSpace(os.Getenv("KIRAAI_MODEL"))
+		if kiraModel == "" {
+			kiraModel = "kira-mini-1.0"
+		}
+
+		fmt.Printf("Đang sử dụng KiraAI (%s, %d keys)\n", kiraModel, len(kiraKeys))
+		ai = NewOpenAICompatibleService("KiraAI", kiraBaseURL, kiraModel, kiraKeys, botInstruction, profile, searchSvc)
 	} else if provider == "openrouter" {
 		openrouterKeysStr := os.Getenv("OPENROUTER_KEYS")
 		var openrouterKeys []string
