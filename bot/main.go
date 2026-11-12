@@ -188,8 +188,20 @@ func main() {
 		}
 
 		fmt.Printf("🚀 Đang sử dụng Fosta (%s, %d keys)\n", fostaModel, len(fostaKeys))
-		ai = NewOpenAICompatibleService("Fosta", fostaBaseURL, fostaModel, fostaKeys, botInstruction, profile, searchSvc)
-		ai.(*OpenAICompatibleService).WireAPI = "responses"
+		fostaAI := NewOpenAICompatibleService("Fosta", fostaBaseURL, fostaModel, fostaKeys, botInstruction, profile, searchSvc)
+		fostaAI.WireAPI = "responses"
+		ai = NewFallbackAIService(fostaAI)
+		if groqKeys := splitNonEmpty(os.Getenv("GROQ_KEYS")); len(groqKeys) > 0 {
+			groqModel := strings.TrimSpace(os.Getenv("GROQ_MODEL"))
+			if groqModel == "" {
+				groqModel = "openai/gpt-oss-120b"
+			}
+			ai.(*FallbackAIService).Services = append(ai.(*FallbackAIService).Services,
+				NewGroqService(groqKeys, groqModel, botInstruction, profile, searchSvc))
+			fmt.Printf("🔁 Groq (%s) đã cấu hình làm dự phòng cho Fosta\n", groqModel)
+		} else {
+			fmt.Println("ℹ️ Chưa cấu hình GROQ_KEYS; Fosta chưa có provider dự phòng")
+		}
 	} else if provider == "openai" || provider == "chatgpt" {
 		var openAIKeys []string
 		for _, key := range strings.Split(os.Getenv("OPENAI_API_KEYS"), ",") {
