@@ -163,6 +163,32 @@ func main() {
 		}
 		fmt.Printf("🚀 Đang sử dụng 'bộ não' Google AI (%d keys)\n", len(geminiKeys))
 		ai = NewGeminiService(geminiKeys, botInstruction, profile, searchSvc)
+	} else if provider == "openai" || provider == "chatgpt" {
+		var openAIKeys []string
+		for _, key := range strings.Split(os.Getenv("OPENAI_API_KEYS"), ",") {
+			if key = strings.TrimSpace(key); key != "" {
+				openAIKeys = append(openAIKeys, key)
+			}
+		}
+		if len(openAIKeys) == 0 {
+			if key := strings.TrimSpace(os.Getenv("OPENAI_API_KEY")); key != "" {
+				openAIKeys = []string{key}
+			} else {
+				log.Fatal("LỖI: Thiếu biến môi trường OPENAI_API_KEY hoặc OPENAI_API_KEYS")
+			}
+		}
+
+		openAIBaseURL := strings.TrimSpace(os.Getenv("OPENAI_BASE_URL"))
+		if openAIBaseURL == "" {
+			openAIBaseURL = "https://api.openai.com/v1"
+		}
+		openAIModel := strings.TrimSpace(os.Getenv("OPENAI_MODEL"))
+		if openAIModel == "" {
+			openAIModel = "gpt-6-luna-light"
+		}
+
+		fmt.Printf("🚀 Đang sử dụng OpenAI (%s, %d keys)\n", openAIModel, len(openAIKeys))
+		ai = NewOpenAICompatibleService("OpenAI", openAIBaseURL, openAIModel, openAIKeys, botInstruction, profile, searchSvc)
 	} else if provider == "kiraai" {
 		// KiraAI uses the OpenAI-compatible chat completions API.
 		var kiraKeys []string
