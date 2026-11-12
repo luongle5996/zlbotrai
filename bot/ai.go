@@ -50,16 +50,38 @@ type GroqResponse struct {
 	} `json:"error"`
 }
 
+type ResponsesRequest struct {
+	Model        string      `json:"model"`
+	Instructions string      `json:"instructions,omitempty"`
+	Input        []AIMessage `json:"input"`
+}
+
+type ResponsesResponse struct {
+	Output []struct {
+		Content []struct {
+			Type string `json:"type"`
+			Text string `json:"text"`
+		} `json:"content"`
+	} `json:"output"`
+	OutputText string `json:"output_text"`
+	Error      struct {
+		Message string `json:"message"`
+		Type    string `json:"type"`
+	} `json:"error"`
+}
+
 type OpenAICompatibleService struct {
-	Keys          []string
-	CurrentIndex  int
-	Mu            sync.Mutex
-	ProviderName  string
-	BaseURL       string
-	Model         string
-	Profile       BotProfile
-	SystemPrompt  string
-	SearchService *SearchService
+	Keys           []string
+	CurrentIndex   int
+	Mu             sync.Mutex
+	ProviderName   string
+	BaseURL        string
+	Model          string
+	WireAPI        string
+	FallbackModels []string
+	Profile        BotProfile
+	SystemPrompt   string
+	SearchService  *SearchService
 }
 
 type AnthropicMessage struct {
@@ -102,6 +124,40 @@ type AIService interface {
 	GetAIResponse(userPrompt string, history []AIMessage, forceSearch bool, senderHonorific string) (string, string, error)
 }
 
+type FallbackAIService struct {
+	Services []AIService
+}
+
+func NewFallbackAIService(services ...AIService) *FallbackAIService {
+	return &FallbackAIService{Services: services}
+}
+
+func (s *FallbackAIService) GetAIResponse(userPrompt string, history []AIMessage, forceSearch bool, honorific string) (string, string, error) {
+	var lastErr error
+	for _, service := range s.Services {
+		text, reaction, err := service.GetAIResponse(userPrompt, history, forceSearch, honorific)
+		if err == nil {
+			return text, reaction, nil
+		}
+		lastErr = err
+		fmt.Printf("⚠️ Provider/model thất bại, thử cấu hình tiếp theo: %v\n", err)
+	}
+	if lastErr == nil {
+		lastErr = fmt.Errorf("không có provider dự phòng nào được cấu hình")
+	}
+	return "", "", lastErr
+}
+
+func splitNonEmpty(raw string) []string {
+	var values []string
+	for _, value := range strings.Split(raw, ",") {
+		if value = strings.TrimSpace(value); value != "" {
+			values = append(values, value)
+		}
+	}
+	return values
+}
+
 func NewOpenAICompatibleService(providerName, baseURL, model string, keys []string, systemPrompt string, profile BotProfile, searchSvc *SearchService) *OpenAICompatibleService {
 	return &OpenAICompatibleService{
 		Keys:          keys,
@@ -128,59 +184,109 @@ func NewFreeModelService(keys []string, systemPrompt string, profile BotProfile,
 }
 
 func (s *OpenAICompatibleService) callAPI(messages []AIMessage) (string, error) {
+	models := append([]string{s.Model}, s.FallbackModels...)
 	var lastErr error
-	for i := 0; i < len(s.Keys); i++ {
-		s.Mu.Lock()
-		apiKey := strings.TrimSpace(s.Keys[s.CurrentIndex])
-		s.CurrentIndex = (s.CurrentIndex + 1) % len(s.Keys)
-		s.Mu.Unlock()
-		if apiKey == "" {
-			lastErr = fmt.Errorf("API key rỗng")
+	seenModels := make(map[string]struct{}, len(models))
+	for _, model := range models {
+		model = strings.TrimSpace(model)
+		if model == "" {
 			continue
 		}
-
-		reqBody := GroqRequest{
-			Model:       s.Model,
-			Messages:    messages,
-			Temperature: 0.7,
-		}
-		jsonData, _ := json.Marshal(reqBody)
-
-		fmt.Printf("🤖 [%s] Request model=%s base_url=%s\n", s.ProviderName, s.Model, s.BaseURL)
-		req, _ := http.NewRequest("POST", s.BaseURL+"/chat/completions", bytes.NewBuffer(jsonData))
-		req.Header.Set("Authorization", "Bearer "+apiKey)
-		req.Header.Set("Content-Type", "application/json")
-
-		resp, err := (&http.Client{}).Do(req)
-		if err != nil {
-			lastErr = err
+		if _, exists := seenModels[model]; exists {
 			continue
 		}
-		body, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
-
-		if resp.StatusCode != http.StatusOK {
-			var apiErr GroqResponse
-			json.Unmarshal(body, &apiErr)
-			message := apiErr.Error.Message
-			if message == "" {
-				message = string(body)
-			}
-			if resp.StatusCode == http.StatusTooManyRequests {
-				lastErr = fmt.Errorf("%s 429: %s", s.ProviderName, message)
+		seenModels[model] = struct{}{}
+		for i := 0; i < len(s.Keys); i++ {
+			s.Mu.Lock()
+			apiKey := strings.TrimSpace(s.Keys[s.CurrentIndex])
+			s.CurrentIndex = (s.CurrentIndex + 1) % len(s.Keys)
+			s.Mu.Unlock()
+			if apiKey == "" {
+				lastErr = fmt.Errorf("API key rỗng")
 				continue
 			}
-			return "", fmt.Errorf("%s Error (%d): %s", s.ProviderName, resp.StatusCode, message)
-		}
 
-		var apiResp GroqResponse
-		json.Unmarshal(body, &apiResp)
-		if len(apiResp.Choices) > 0 {
-			return apiResp.Choices[0].Message.Content, nil
+			endpoint := s.BaseURL + "/chat/completions"
+			var reqBody any = GroqRequest{Model: model, Messages: messages, Temperature: 0.7}
+			if s.WireAPI == "responses" {
+				endpoint = s.BaseURL + "/responses"
+				instructions := ""
+				input := make([]AIMessage, 0, len(messages))
+				for _, message := range messages {
+					if message.Role == "system" || message.Role == "developer" {
+						if instructions != "" {
+							instructions += "\n\n"
+						}
+						instructions += message.Content
+						continue
+					}
+					input = append(input, message)
+				}
+				reqBody = ResponsesRequest{Model: model, Instructions: instructions, Input: input}
+			}
+			jsonData, _ := json.Marshal(reqBody)
+
+			fmt.Printf("🤖 [%s] Request model=%s base_url=%s\n", s.ProviderName, model, s.BaseURL)
+			req, _ := http.NewRequest("POST", endpoint, bytes.NewBuffer(jsonData))
+			req.Header.Set("Authorization", "Bearer "+apiKey)
+			req.Header.Set("Content-Type", "application/json")
+
+			resp, err := (&http.Client{}).Do(req)
+			if err != nil {
+				lastErr = err
+				continue
+			}
+			body, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+
+			if resp.StatusCode != http.StatusOK {
+				var apiErr GroqResponse
+				json.Unmarshal(body, &apiErr)
+				message := apiErr.Error.Message
+				if message == "" {
+					message = string(body)
+				}
+				if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode == http.StatusServiceUnavailable || resp.StatusCode == http.StatusGatewayTimeout || resp.StatusCode == http.StatusBadGateway || strings.Contains(strings.ToLower(message), "model") && (resp.StatusCode == http.StatusBadRequest || resp.StatusCode == http.StatusNotFound) {
+					lastErr = fmt.Errorf("%s model %s Error (%d): %s", s.ProviderName, model, resp.StatusCode, message)
+					continue
+				}
+				if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+					return "", fmt.Errorf("%s Error (%d): %s", s.ProviderName, resp.StatusCode, message)
+				}
+				lastErr = fmt.Errorf("%s model %s Error (%d): %s", s.ProviderName, model, resp.StatusCode, message)
+				continue
+			}
+
+			if s.WireAPI == "responses" {
+				var apiResp ResponsesResponse
+				if err := json.Unmarshal(body, &apiResp); err != nil {
+					lastErr = fmt.Errorf("đọc phản hồi Responses API: %w", err)
+					continue
+				}
+				if apiResp.OutputText != "" {
+					return apiResp.OutputText, nil
+				}
+				var output strings.Builder
+				for _, item := range apiResp.Output {
+					for _, content := range item.Content {
+						if content.Type == "output_text" || content.Type == "text" {
+							output.WriteString(content.Text)
+						}
+					}
+				}
+				if output.Len() > 0 {
+					return output.String(), nil
+				}
+			} else {
+				var apiResp GroqResponse
+				if err := json.Unmarshal(body, &apiResp); err == nil && len(apiResp.Choices) > 0 {
+					return apiResp.Choices[0].Message.Content, nil
+				}
+			}
+			lastErr = fmt.Errorf("không nhận được phản hồi")
 		}
-		lastErr = fmt.Errorf("không nhận được phản hồi")
 	}
-	return "", fmt.Errorf("tất cả %s keys thất bại: %v", s.ProviderName, lastErr)
+	return "", fmt.Errorf("tất cả model/key %s thất bại: %v", s.ProviderName, lastErr)
 }
 
 func (s *OpenAICompatibleService) GetAIResponse(userPrompt string, history []AIMessage, forceSearch bool, honorific string) (string, string, error) {

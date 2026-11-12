@@ -163,6 +163,33 @@ func main() {
 		}
 		fmt.Printf("🚀 Đang sử dụng 'bộ não' Google AI (%d keys)\n", len(geminiKeys))
 		ai = NewGeminiService(geminiKeys, botInstruction, profile, searchSvc)
+	} else if provider == "fosta" {
+		var fostaKeys []string
+		for _, key := range strings.Split(os.Getenv("FOSTA_API_KEYS"), ",") {
+			if key = strings.TrimSpace(key); key != "" {
+				fostaKeys = append(fostaKeys, key)
+			}
+		}
+		if len(fostaKeys) == 0 {
+			if key := strings.TrimSpace(os.Getenv("FOSTA_API_KEY")); key != "" {
+				fostaKeys = []string{key}
+			} else {
+				log.Fatal("LỖI: Thiếu biến môi trường FOSTA_API_KEY hoặc FOSTA_API_KEYS")
+			}
+		}
+
+		fostaBaseURL := strings.TrimSpace(os.Getenv("FOSTA_BASE_URL"))
+		if fostaBaseURL == "" {
+			fostaBaseURL = "https://codex.fosta.app/v1"
+		}
+		fostaModel := strings.TrimSpace(os.Getenv("FOSTA_MODEL"))
+		if fostaModel == "" {
+			fostaModel = "gpt-6-sol"
+		}
+
+		fmt.Printf("🚀 Đang sử dụng Fosta (%s, %d keys)\n", fostaModel, len(fostaKeys))
+		ai = NewOpenAICompatibleService("Fosta", fostaBaseURL, fostaModel, fostaKeys, botInstruction, profile, searchSvc)
+		ai.(*OpenAICompatibleService).WireAPI = "responses"
 	} else if provider == "openai" || provider == "chatgpt" {
 		var openAIKeys []string
 		for _, key := range strings.Split(os.Getenv("OPENAI_API_KEYS"), ",") {
@@ -189,6 +216,53 @@ func main() {
 
 		fmt.Printf("🚀 Đang sử dụng OpenAI (%s, %d keys)\n", openAIModel, len(openAIKeys))
 		ai = NewOpenAICompatibleService("OpenAI", openAIBaseURL, openAIModel, openAIKeys, botInstruction, profile, searchSvc)
+	} else if provider == "auto" || provider == "fallback" {
+		// Try the configured providers in order. Each provider is initialized only
+		// when its credentials are present, and requests fall through on errors.
+		if fostaKey := strings.TrimSpace(os.Getenv("FOSTA_API_KEY")); fostaKey != "" {
+			fostaURL := strings.TrimSpace(os.Getenv("FOSTA_BASE_URL"))
+			if fostaURL == "" {
+				fostaURL = "https://codex.fosta.app/v1"
+			}
+			fostaModel := strings.TrimSpace(os.Getenv("FOSTA_MODEL"))
+			if fostaModel == "" {
+				fostaModel = "gpt-6-sol"
+			}
+			fostaAI := NewOpenAICompatibleService("Fosta", fostaURL, fostaModel, []string{fostaKey}, botInstruction, profile, searchSvc)
+			fostaAI.WireAPI = "responses"
+			ai = NewFallbackAIService(fostaAI)
+		}
+		if groqKey := strings.TrimSpace(os.Getenv("GROQ_KEYS")); groqKey != "" {
+			groqKeys := splitNonEmpty(groqKey)
+			groqModel := strings.TrimSpace(os.Getenv("GROQ_MODEL"))
+			if groqModel == "" {
+				groqModel = "openai/gpt-oss-120b"
+			}
+			fallback := NewFallbackAIService(NewGroqService(groqKeys, groqModel, botInstruction, profile, searchSvc))
+			if current, ok := ai.(*FallbackAIService); ok {
+				current.Services = append(current.Services, fallback.Services...)
+			} else {
+				ai = fallback
+			}
+		}
+		geminiKeys := splitNonEmpty(os.Getenv("GEMINI_KEYS"))
+		if len(geminiKeys) == 0 {
+			if key := strings.TrimSpace(os.Getenv("GEMINI_KEY")); key != "" {
+				geminiKeys = []string{key}
+			}
+		}
+		if len(geminiKeys) > 0 {
+			fallback := NewFallbackAIService(NewGeminiService(geminiKeys, botInstruction, profile, searchSvc))
+			if current, ok := ai.(*FallbackAIService); ok {
+				current.Services = append(current.Services, fallback.Services...)
+			} else {
+				ai = fallback
+			}
+		}
+		if ai == nil {
+			log.Fatal("LỖI: MODEL_PROVIDER=auto cần ít nhất một trong FOSTA_API_KEY, GROQ_KEYS hoặc GEMINI_KEYS")
+		}
+		fmt.Println("🔁 Đã bật chuyển provider tự động: Fosta → Groq → Gemini (theo credentials đã cấu hình)")
 	} else if provider == "kiraai" {
 		// KiraAI uses the OpenAI-compatible chat completions API.
 		var kiraKeys []string
