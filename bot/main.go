@@ -184,7 +184,7 @@ func main() {
 		}
 		fostaModel := strings.TrimSpace(os.Getenv("FOSTA_MODEL"))
 		if fostaModel == "" {
-			fostaModel = "gpt-6-sol"
+			fostaModel = "gpt-6-luna-light"
 		}
 
 		fmt.Printf("🚀 Đang sử dụng Fosta (%s, %d keys)\n", fostaModel, len(fostaKeys))
@@ -238,7 +238,7 @@ func main() {
 			}
 			fostaModel := strings.TrimSpace(os.Getenv("FOSTA_MODEL"))
 			if fostaModel == "" {
-				fostaModel = "gpt-6-sol"
+				fostaModel = "gpt-6-luna-light"
 			}
 			fostaAI := NewOpenAICompatibleService("Fosta", fostaURL, fostaModel, []string{fostaKey}, botInstruction, profile, searchSvc)
 			fostaAI.WireAPI = "responses"
