@@ -46,6 +46,32 @@ Even without test files, `go test ./...` is still a convenient compile check for
 
 ## Theo dõi thư hợp đồng bằng Google Sheet
 
+## Báo hồ sơ Notion vào nhóm Zalo
+
+Bot có thể đọc database **Theo dõi hồ sơ công trình** và báo vào nhóm khi có dòng mới
+hoặc khi cột **Trạng thái** đổi. Các chỉnh sửa cột khác không tạo tin mới. Bot kiểm tra
+mỗi phút và dùng MongoDB để nhớ lần thông báo gần nhất qua các lần khởi động.
+Lần chạy đầu chỉ ghi mốc, không báo lại hồ sơ đã có.
+
+Tạo một Notion integration nội bộ có quyền **Read content**, cấp quyền cho integration
+trên database hồ sơ, rồi đặt các biến môi trường sau trên Render:
+
+```text
+NOTION_API_KEY=<integration secret>
+NOTION_DOSSIER_DATA_SOURCE_ID=41e2a317-bce3-816d-9ba5-000be59271e4
+NOTION_ALERT_GROUP_ID=<ID nhóm Zalo cần nhận tin>
+```
+
+`NOTION_DOSSIER_DATA_SOURCE_ID` là ID data source của database, không phải ID
+trang database. Nếu không đặt `NOTION_ALERT_GROUP_ID`, bot dùng
+`LETTER_ALERT_GROUP_ID` đang có. Không ghi `NOTION_API_KEY` vào mã nguồn hoặc README. Khi thiếu token, data source ID hoặc cả hai ID nhóm,
+tính năng này tự tắt; các tính năng khác vẫn chạy.
+
+Tin báo gồm tên hồ sơ, công trình, trạng thái mới, người đã ký, người chờ ký,
+người đang giữ và link Notion. Nhóm nhận tin phải là nhóm mà tài khoản Zalo
+đang chạy bot có quyền gửi tin. Mã nguồn hiện dùng thư viện Zalo của dự án;
+việc gửi thực tế cần kiểm tra sau khi cấu hình và triển khai.
+
 Bot có thể đọc một Google Sheet dạng CSV để trả lời thông tin thư/hợp đồng và tự nhắc hằng ngày vào một nhóm Zalo cố định.
 
 ### Bố cục Google Sheet
