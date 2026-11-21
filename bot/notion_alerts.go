@@ -22,6 +22,8 @@ import (
 
 // NotionAlertService only reads Notion. MongoDB keeps the last announced state
 // so restarting the bot does not announce the same records again.
+const dossierTableURL = "https://app.notion.com/p/41e2a317bce381b18e33f7aa70bf150d"
+
 type NotionAlertService struct {
 	Token        string
 	DataSourceID string
@@ -251,9 +253,6 @@ func formatDossierAlert(record dossierRecord, previousStatus string, isNew bool)
 	if record.Holder != "" {
 		fmt.Fprintf(&b, "\nĐang giữ: %s", record.Holder)
 	}
-	if record.URL != "" {
-		fmt.Fprintf(&b, "\nXem hồ sơ: %s", record.URL)
-	}
 	fmt.Fprintf(&b, "\nBot báo lúc: %s", vietnamTime(time.Now()))
 	return b.String()
 }
@@ -279,10 +278,8 @@ func formatNewDossiers(records []dossierRecord, at time.Time) string {
 		if record.NextSign != "" {
 			fmt.Fprintf(&b, "\nChờ ký: %s", record.NextSign)
 		}
-		if record.URL != "" {
-			fmt.Fprintf(&b, "\n%s", record.URL)
-		}
 	}
+	fmt.Fprintf(&b, "\n\nMở bảng để xem và cập nhật: %s", dossierTableURL)
 	return b.String()
 }
 
@@ -327,6 +324,7 @@ func formatUpdatedDossiers(changes []dossierChange, at time.Time) string {
 		}
 		fmt.Fprintf(&b, "\n\n%d. %s", i+1, body)
 	}
+	fmt.Fprintf(&b, "\n\nMở bảng để xem và cập nhật: %s", dossierTableURL)
 	return b.String()
 }
 

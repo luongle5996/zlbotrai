@@ -21,6 +21,9 @@ func TestNotionDateAndGroupedAlert(t *testing.T) {
 			t.Errorf("alert missing %q: %s", part, message)
 		}
 	}
+	if strings.Count(message, dossierTableURL) != 1 {
+		t.Fatalf("expected one table link: %s", message)
+	}
 }
 
 func TestDigestCutoffVietnamTime(t *testing.T) {
@@ -77,5 +80,8 @@ func TestThreeDossierUpdatesInOneMessage(t *testing.T) {
 		if !strings.Contains(message, part) {
 			t.Errorf("missing %q: %s", part, message)
 		}
+	}
+	if strings.Count(message, dossierTableURL) != 1 {
+		t.Fatalf("expected one table link: %s", message)
 	}
 }
